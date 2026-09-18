@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "StudySteps"
+description = "A mobile-first educational web app for students in grades 6–12 that turns confusing assignments and concepts into clear, student-reviewed next steps using local persistence and deterministic mock guidance."
+version = "1.0.0"
+id = "artifacts/studysteps"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23781
+
+[services.development]
+run = "pnpm --filter @workspace/studysteps run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/studysteps", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/studysteps/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23781"
+BASE_PATH = "/"
