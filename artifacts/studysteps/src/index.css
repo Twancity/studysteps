@@ -80,7 +80,7 @@ input,textarea,select { width:100%;border:1px solid #ccd4e1;border-radius:12px;p
 @media (min-width:800px) { .bottom-nav { position:sticky;width:max-content;border:1px solid var(--line);border-radius:18px;bottom:18px;margin:0 auto;height:62px;box-shadow:0 8px 25px #27375b20;overflow:visible; }.app-shell { padding-bottom:15px; } }
 @media (max-width:700px) {
   .topbar { height:62px;padding:0 16px; }.brand { font-size:19px; }.brand-mark { width:34px;height:34px; }.principle { display:none; }
-  .page { width:min(100% - 24px,1120px);padding-top:24px; }.narrow { width:min(100% - 24px,780px); }
+  .page { width:min(100% - 24px,1120px);padding-top:24px;padding-bottom:calc(120px + env(safe-area-inset-bottom)); }.narrow { width:min(100% - 24px,780px); }
   .welcome { padding:27px 22px;display:block;border-radius:22px; }.welcome h1 { font-size:34px; }.welcome p { font-size:15px;padding-right:20px; }.big-action { margin-top:22px;width:100%; }
   .card-grid,.mode-grid { grid-template-columns:1fr; }.mode-card { min-height:122px; }
   .page-heading h1 { font-size:33px; }
