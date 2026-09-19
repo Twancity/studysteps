@@ -222,15 +222,67 @@ function GetHelp() {
 }
 
 const buildSteps = (draft: Draft): Step[] => {
-  const topic = draft.title || draft.text.split(/[.!?\n]/)[0].slice(0, 45) || 'the assignment';
-  return [
-    `Read the directions once and highlight the action words`,
-    `Write down what the finished ${topic.toLowerCase()} needs to include`,
-    `Gather the notes, sources, or materials you will need`,
-    `Complete a rough first part without worrying about perfection`,
-    `Finish the remaining parts one at a time`,
-    `Compare your work with the directions and revise`,
-  ].map(text => ({ id: uid(), text, complete: false }));
+  const input = draft.text.toLowerCase();
+  const numberWords: Record<string, number> = {
+    one: 1, two: 2, three: 3, four: 4, five: 5,
+    six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  };
+  const readNumber = (value?: string) => value
+    ? (Number.isNaN(Number(value)) ? numberWords[value] : Number(value))
+    : undefined;
+  const sourceMatch = input.match(/\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:credible\s+|reliable\s+)?sources?\b/);
+  const minuteMatch = input.match(/\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)[-\s]minute\b/);
+  const slideMatch = input.match(/\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+slides?\b/);
+  const pageMatch = input.match(/\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)[-\s]pages?\b/);
+  const wordMatch = input.match(/\b(\d{2,4})[-\s]words?\b/);
+  const sourceCount = readNumber(sourceMatch?.[1]);
+  const minutes = readNumber(minuteMatch?.[1]);
+  const slides = readNumber(slideMatch?.[1]);
+  const pages = readNumber(pageMatch?.[1]);
+  const words = readNumber(wordMatch?.[1]);
+  const hasPresentation = /\b(present|presentation|speech|talk)\b/.test(input);
+  const hasResearch = Boolean(sourceCount) || /\b(research|sources?|bibliography|works cited|citations?)\b/.test(input);
+  const hasEssay = /\b(essay|paper|paragraph|report)\b/.test(input);
+  const hasSlides = Boolean(slides) || /\b(slides?|slideshow|powerpoint|google slides)\b/.test(input);
+  const hasPoster = /\bposter|display board\b/.test(input);
+
+  const steps: string[] = ['Review the directions and make a checklist of every requirement'];
+
+  if (sourceCount) {
+    steps.push(`Find ${sourceCount} credible source${sourceCount === 1 ? '' : 's'} and record the citation details`);
+  } else if (hasResearch) {
+    steps.push('Find credible sources and record the citation details');
+  } else {
+    steps.push('Gather the notes, examples, and materials you will need');
+  }
+
+  if (hasResearch) {
+    steps.push('Organize the research into the main ideas you want to explain');
+  } else {
+    steps.push('Organize your main ideas before creating the final work');
+  }
+
+  if (hasEssay) {
+    const length = pages ? ` for the ${pages}-page requirement` : words ? ` for the ${words}-word requirement` : '';
+    steps.push(`Create a short outline${length}`);
+    steps.push('Write the first draft using your notes and evidence');
+  } else if (hasSlides) {
+    steps.push(`Create the ${slides ? `${slides} ` : ''}slides with clear points and helpful visuals`);
+  } else if (hasPoster) {
+    steps.push('Create the poster with clear sections, labels, and helpful visuals');
+  } else if (hasPresentation) {
+    steps.push('Create the presentation content from your organized research');
+  } else {
+    steps.push('Create a first version of the project one section at a time');
+  }
+
+  if (hasPresentation) {
+    steps.push(`Prepare what you will say for the ${minutes ? `${minutes}-minute ` : ''}presentation`);
+    steps.push(`Practice the presentation${minutes ? ` with a timer until it is close to ${minutes} minutes` : ' out loud and revise unclear parts'}`);
+  }
+
+  steps.push('Review the finished work against every assignment requirement');
+  return steps.map(text => ({ id: uid(), text, complete: false }));
 };
 
 function Review({ saveAssignment }: { saveAssignment: (a: Assignment) => void }) {
