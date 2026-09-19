@@ -292,17 +292,155 @@ function Review({ saveAssignment }: { saveAssignment: (a: Assignment) => void })
   );
 }
 
+type ConceptGuide = {
+  heading: string;
+  explanation: string[];
+  keyIdeas: string[];
+  analogy: string;
+  check: string;
+  checkHint: string;
+};
+
+function buildConceptGuide(input: string): ConceptGuide {
+  const question = input.toLowerCase();
+
+  if (question.includes('photosynth')) {
+    return {
+      heading: 'Plants use light energy to make stored food',
+      explanation: [
+        'Photosynthesis is the process plants use to make sugar, which stores energy they can use to grow and stay alive.',
+        'It happens mainly in leaf cells inside structures called chloroplasts. Chlorophyll in those chloroplasts captures energy from sunlight.',
+        'The plant takes in carbon dioxide from the air and water through its roots. Using light energy, it rearranges those materials into glucose (a sugar) and releases oxygen.',
+        'The important idea is that sunlight supplies the energy, but it does not become matter. The atoms in the sugar come from carbon dioxide and water.',
+      ],
+      keyIdeas: [
+        'Inputs: light energy, carbon dioxide, and water.',
+        'Main product: glucose, which stores chemical energy for the plant.',
+        'Oxygen is released as another product.',
+        'Most photosynthesis happens in chloroplasts, especially in leaves.',
+      ],
+      analogy: 'Think of a leaf as a tiny solar-powered kitchen. Sunlight powers the kitchen, carbon dioxide and water are the ingredients, glucose is the food it prepares, and oxygen is released along the way.',
+      check: 'A plant is placed in bright light but receives no carbon dioxide. Why can it not keep making glucose, even though it still has energy from the light?',
+      checkHint: 'Explain what carbon dioxide contributes to the process—not just that the plant “needs it.”',
+    };
+  }
+
+  if (question.includes('mitosis') || question.includes('cell division')) {
+    return {
+      heading: 'One cell carefully makes two matching cells',
+      explanation: [
+        'Mitosis is the process a body cell uses to divide into two genetically matching cells.',
+        'Before division begins, the cell copies its DNA so there are two complete sets of instructions.',
+        'During mitosis, the copied chromosomes line up and separate to opposite sides. The cell then splits, giving each new cell one copy of every chromosome.',
+        'Your body uses this process for growth, repair, and replacing worn-out cells.',
+      ],
+      keyIdeas: [
+        'DNA is copied before the cell divides.',
+        'Copied chromosomes separate evenly.',
+        'The result is two cells with matching genetic information.',
+        'Mitosis supports growth and tissue repair.',
+      ],
+      analogy: 'Imagine copying a complete instruction manual, checking that every chapter is present, and then placing one full copy into each of two new binders.',
+      check: 'If the DNA were not copied before mitosis, what important problem would the two new cells have?',
+      checkHint: 'Think about the instructions each cell needs in order to function.',
+    };
+  }
+
+  if (question.includes('fraction') || question.includes('denominator')) {
+    return {
+      heading: 'Fractions describe equal parts of a whole',
+      explanation: [
+        'A fraction compares a number of selected parts with the total number of equal parts in one whole.',
+        'The denominator tells how many equal-sized parts the whole is divided into. The numerator tells how many of those parts you have.',
+        'Two fractions can look different but represent the same amount because the whole has simply been divided into more or fewer equal pieces.',
+        'When adding fractions, the pieces must be the same size, which is why different denominators need a common denominator first.',
+      ],
+      keyIdeas: [
+        'The denominator describes the size of each equal part.',
+        'The numerator counts how many parts are being considered.',
+        'Equivalent fractions name the same amount with different-sized pieces.',
+        'Only like-sized fractional parts can be added directly.',
+      ],
+      analogy: 'One half of a pizza is the same amount as two fourths. Cutting each half into two smaller pieces changes the number of pieces, but it does not change how much pizza you have.',
+      check: 'Why would adding 1/2 + 1/3 as 2/5 give the wrong amount?',
+      checkHint: 'Compare the size of a half-piece with the size of a third-piece.',
+    };
+  }
+
+  if (question.includes('gravity') || question.includes('orbit')) {
+    return {
+      heading: 'Gravity is an attraction between objects with mass',
+      explanation: [
+        'Gravity is a force that pulls any two objects with mass toward each other.',
+        'The pull becomes stronger when an object has more mass and weaker when the objects are farther apart.',
+        'Earth’s large mass creates a noticeable pull that gives objects weight and causes unsupported objects to accelerate toward the ground.',
+        'Gravity also keeps the Moon and satellites in orbit: they move forward while continually falling toward Earth, so their path curves around it.',
+      ],
+      keyIdeas: [
+        'All objects with mass exert gravity.',
+        'More mass creates a stronger gravitational pull.',
+        'Greater distance makes the pull weaker.',
+        'An orbit combines forward motion with continuous falling.',
+      ],
+      analogy: 'Imagine rolling a ball forward while the floor curves downward beneath it at the same rate. The ball keeps falling, but it never reaches the floor—similar to an object in orbit.',
+      check: 'Why does the Moon stay near Earth instead of either flying away in a straight line or falling straight down?',
+      checkHint: 'Use both the Moon’s forward motion and Earth’s gravitational pull in your explanation.',
+    };
+  }
+
+  if (question.includes('ecosystem') || question.includes('food chain') || question.includes('food web')) {
+    return {
+      heading: 'An ecosystem connects living things with their environment',
+      explanation: [
+        'An ecosystem includes all the living organisms in an area and the nonliving parts of their environment, such as water, air, soil, and sunlight.',
+        'Organisms depend on one another for energy, shelter, pollination, decomposition, and other needs.',
+        'Energy usually enters through producers like plants, moves to consumers, and eventually reaches decomposers. Unlike matter, which is recycled, usable energy decreases as it moves through the system.',
+        'Because these relationships are connected, a change to one population or resource can affect many other parts of the ecosystem.',
+      ],
+      keyIdeas: [
+        'Biotic factors are living; abiotic factors are nonliving.',
+        'Producers capture energy, consumers eat, and decomposers recycle matter.',
+        'Food webs show several connected feeding relationships.',
+        'Changes can spread through the whole system.',
+      ],
+      analogy: 'An ecosystem is like a neighborhood where homes, stores, roads, electricity, and people all depend on one another. Removing one important service can create effects throughout the neighborhood.',
+      check: 'If a disease greatly reduces the plants in an ecosystem, how could that affect both herbivores and predators?',
+      checkHint: 'Trace how energy moves from producers to different levels of consumers.',
+    };
+  }
+
+  const cleaned = input.trim().replace(/[?.!]$/, '');
+  return {
+    heading: `Build a clear model of “${cleaned.slice(0, 70)}${cleaned.length > 70 ? '…' : ''}”`,
+    explanation: [
+      'Start by identifying what kind of thing the concept is: an object, a process, a relationship, or a rule.',
+      'Next, look for the parts involved and what each part does. Then connect them using cause-and-effect language such as “because,” “therefore,” or “when this changes, that changes.”',
+      'A strong explanation should say not only what happens, but also how or why it happens. Compare that explanation with your class notes and vocabulary so you can replace this general model with the exact details your course expects.',
+    ],
+    keyIdeas: [
+      'Name the concept and its purpose or role.',
+      'Identify the important parts, inputs, or conditions.',
+      'Describe the sequence or cause-and-effect connection.',
+      'Check the explanation against your class materials.',
+    ],
+    analogy: 'Think of understanding a concept like assembling a map: vocabulary gives you the landmarks, cause and effect gives you the roads, and an example shows one complete route through the map.',
+    check: `What is one change to the conditions in “${cleaned.slice(0, 60)}” that would change the result, and why?`,
+    checkHint: 'Use a because statement to show the connection between the change and its effect.',
+  };
+}
+
 function ConceptReview({ draft }: { draft: Draft }) {
   const [, navigate] = useLocation();
   const topic = draft.text.trim().replace(/[?.!]$/, '');
+  const guide = buildConceptGuide(topic);
   return (
     <div className="page narrow review-page">
       <button className="back" onClick={() => navigate('/help')}><ArrowLeft /> Try a different question</button>
       <div className="review-banner concept"><span><Lightbulb /></span><div><p className="eyebrow">A SIMPLER WAY IN</p><h1>Let’s make this click</h1><p>This is a practice explanation—not an answer to submit.</p></div></div>
-      <section className="concept-card"><span className="concept-label">SIMPLE EXPLANATION</span><h2>Think of it in smaller pieces</h2><p><strong>Your question:</strong> {topic}</p><p>The main idea is that difficult concepts usually connect a few simpler ideas. First identify what changes, what stays the same, and what causes the change. Then explain that connection in your own words.</p></section>
-      <section className="concept-card"><span className="concept-label">KEY IDEAS</span><ul className="key-list"><li><Check /> Name the main thing or process.</li><li><Check /> Notice the cause-and-effect relationship.</li><li><Check /> Connect it to something you already understand.</li></ul></section>
-      <section className="concept-card analogy"><span className="concept-label">EXAMPLE OR ANALOGY</span><p>It’s like learning a new game: the full game feels confusing until you understand the goal, the pieces, and what happens on each turn. A school concept becomes clearer when you find those same basic parts.</p></section>
-      <section className="check-question"><HelpCircle /><div><span>QUICK UNDERSTANDING CHECK</span><h2>How would you explain the main idea to a classmate in one or two sentences?</h2><textarea rows={3} placeholder="Try it in your own words…" /></div></section>
+      <section className="concept-card"><span className="concept-label">SIMPLE EXPLANATION</span><h2>{guide.heading}</h2><p><strong>Your question:</strong> {topic}</p>{guide.explanation.map((paragraph, index) => <p key={index}>{paragraph}</p>)}</section>
+      <section className="concept-card"><span className="concept-label">KEY IDEAS</span><ul className="key-list">{guide.keyIdeas.map(idea => <li key={idea}><Check /> {idea}</li>)}</ul></section>
+      <section className="concept-card analogy"><span className="concept-label">CONCRETE ANALOGY</span><p>{guide.analogy}</p></section>
+      <section className="check-question"><HelpCircle /><div><span>QUICK UNDERSTANDING CHECK</span><h2>{guide.check}</h2><textarea rows={3} aria-label="Your understanding-check answer" placeholder={guide.checkHint} /></div></section>
       <div className="concept-actions"><button className="secondary" onClick={() => navigate('/help')}>Ask another question</button><button className="primary" onClick={() => navigate('/')}>Done for now</button></div>
       <div className="integrity-note compact"><Lightbulb /><span>Use this explanation to build your understanding. Write your final schoolwork in your own words and follow your teacher’s rules.</span></div>
     </div>
