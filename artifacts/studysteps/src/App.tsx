@@ -1,5 +1,5 @@
 import { type ChangeEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
-import { analyzePhoto, createPhotoHelp } from '@workspace/api-client-react';
+import { analyzePhoto, createPhotoHelp, createProjectPlan } from '@workspace/api-client-react';
 import type { PhotoExtraction, PhotoHelpResult } from '@workspace/api-client-react';
 import {
   ArrowLeft, ArrowRight, BookOpen, CalendarDays, Camera, Check, CheckCircle2,
@@ -23,6 +23,7 @@ type Draft = { mode: Mode; text: string; title: string; subject: string; dueDate
 const STORAGE_KEY = 'studysteps.assignments.v1';
 const DRAFT_KEY = 'studysteps.draft.v1';
 const PHOTO_HELP_KEY = 'studysteps.photo-help.v1';
+const PROJECT_LAUNCHPAD_KEY = 'studysteps.project-launchpad.v1';
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const isoDate = (days: number) => {
   const d = new Date(); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10);
@@ -213,17 +214,8 @@ function GetHelp() {
     try {
       const help = await createPhotoHelp({ extraction, studentRequest: text.trim() });
       if (help.kind === 'assignment_project') {
-        const draft: Draft = {
-          mode: 'assignment',
-          text: [extraction.directions, extraction.visibleContent, extraction.requirements.join('\n')].filter(Boolean).join('\n\n'),
-          title: extraction.title || 'Photo assignment',
-          subject: extraction.subject || subject,
-          dueDate,
-          suggestedSteps: help.planSteps,
-          aiSummary: help.summary,
-        };
-        sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
-        navigate('/review');
+        sessionStorage.setItem(PROJECT_LAUNCHPAD_KEY, JSON.stringify({ extraction, help, dueDate }));
+        navigate('/project-launchpad');
       } else {
         sessionStorage.setItem(PHOTO_HELP_KEY, JSON.stringify({ extraction, help }));
         navigate('/photo-help');
@@ -593,7 +585,8 @@ function PhotoHelpReview() {
     try { return JSON.parse(sessionStorage.getItem(PHOTO_HELP_KEY) || 'null'); } catch { return null; }
   }, []);
   const [studentAnswer, setStudentAnswer] = useState('');
-  const [showAnswers, setShowAnswers] = useState(false);
+  const [hintLevels, setHintLevels] = useState<Record<number, number>>({});
+  const [revealedAnswers, setRevealedAnswers] = useState<Record<number, boolean>>({});
   if (!payload) return <div className="page narrow empty-state"><h1>No photo help to review</h1><p>Start with a photo of the schoolwork you want to understand.</p><button className="primary" onClick={() => navigate('/help')}>Add a photo</button></div>;
   const { extraction, help } = payload;
   const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -605,6 +598,7 @@ function PhotoHelpReview() {
         <button onClick={() => jump('explain')}><Lightbulb /> Explain this</button>
         <button onClick={() => jump('example')}><BookOpen /> Show me an example</button>
         <button onClick={() => jump('solve')}><Sparkles /> Solve one with me</button>
+        <button onClick={() => jump('solve')}><HelpCircle /> Give me a hint</button>
         <button onClick={() => jump('check')}><CheckCircle2 /> Check my answer</button>
       </div>
       <section className="concept-card" id="explain">
@@ -622,9 +616,13 @@ function PhotoHelpReview() {
         <span className="concept-label">YOUR PHOTOGRAPHED WORK</span>
         {help.actualProblems.map((problem, index) => <div className="actual-problem" key={`${problem.problem}-${index}`}>
           <h2>{problem.problem}</h2>
-          <ol>{problem.steps.map((step, stepIndex) => <li key={stepIndex}>{step}</li>)}</ol>
-          <button className="secondary" onClick={() => setShowAnswers(v => !v)}>{showAnswers ? 'Hide answer' : 'Show answer with reasoning'}</button>
-          {showAnswers && <p className="problem-answer"><strong>Answer:</strong> {problem.answer}</p>}
+          <p>Try this problem using the method above. Ask for a hint when you need one.</p>
+          {(hintLevels[index] ?? 0) > 0 && <div className="progressive-hints"><strong>Hint {hintLevels[index]}</strong><ol>{problem.steps.slice(0, hintLevels[index]).map((step, stepIndex) => <li key={stepIndex}>{step}</li>)}</ol></div>}
+          {revealedAnswers[index] && <div className="answer-reveal"><strong>Answer with reasoning</strong><ol>{problem.steps.map((step, stepIndex) => <li key={stepIndex}>{step}</li>)}</ol><p className="problem-answer"><strong>Final answer:</strong> {problem.answer}</p></div>}
+          <div className="problem-actions">
+            <button className="secondary" disabled={revealedAnswers[index] || (hintLevels[index] ?? 0) >= problem.steps.length} onClick={() => setHintLevels(v => ({ ...v, [index]: Math.min((v[index] ?? 0) + 1, problem.steps.length) }))}><HelpCircle /> Give me a hint</button>
+            <button className="primary" onClick={() => setRevealedAnswers(v => ({ ...v, [index]: !v[index] }))}>{revealedAnswers[index] ? 'Hide answer' : 'Show Answer'}</button>
+          </div>
         </div>)}
         {help.actualProblems.length === 0 && <p>{help.summary}</p>}
         {help.guidedTry && <div className="guided-try"><strong>Now try this:</strong><span>{help.guidedTry}</span></div>}
@@ -632,6 +630,79 @@ function PhotoHelpReview() {
       <section className="check-question" id="check"><HelpCircle /><div><span>CHECK MY ANSWER</span><h2>{help.understandingCheck}</h2><textarea rows={3} value={studentAnswer} onChange={e => setStudentAnswer(e.target.value)} placeholder="Write how you worked it out…" /><p>{studentAnswer.trim() ? 'Good start. Compare each step with the method above, not only the final number.' : 'Explain your thinking so you can check the method as well as the answer.'}</p></div></section>
       <div className="concept-actions"><button className="secondary" onClick={() => navigate('/help')}>Try another photo</button><button className="primary" onClick={() => navigate('/')}>Done for now</button></div>
       <div className="integrity-note compact"><Lightbulb /><span>StudySteps may show solutions when they teach the reasoning. Follow your teacher’s rules and write submitted work in your own words.</span></div>
+    </div>
+  );
+}
+
+type CitationStyle = 'MLA' | 'APA' | 'Chicago';
+
+function citationFor(resource: PhotoHelpResult['resources'][number], style: CitationStyle) {
+  const unavailable = /unavailable/i.test(resource.date);
+  if (style === 'APA') return `${resource.organization}. (${unavailable ? 'n.d.' : resource.date}). ${resource.title}. ${resource.url}`;
+  if (style === 'Chicago') return `${resource.organization}. “${resource.title}.” ${unavailable ? 'Accessed September 20, 2026' : resource.date}. ${resource.url}.`;
+  return `“${resource.title}.” ${resource.organization}, ${unavailable ? 'n.d.' : resource.date}, ${resource.url}. Accessed 20 Sept. 2026.`;
+}
+
+function inTextFor(resource: PhotoHelpResult['resources'][number], style: CitationStyle) {
+  if (style === 'APA') return `(${resource.organization}, ${/unavailable/i.test(resource.date) ? 'n.d.' : resource.date.match(/\d{4}/)?.[0] || resource.date})`;
+  if (style === 'Chicago') return `Use a numbered footnote after the borrowed fact.`;
+  return `(${resource.organization})`;
+}
+
+function ProjectLaunchpad() {
+  const [, navigate] = useLocation();
+  const payload = useMemo<{ extraction: PhotoExtraction; help: PhotoHelpResult; dueDate: string } | null>(() => {
+    try { return JSON.parse(sessionStorage.getItem(PROJECT_LAUNCHPAD_KEY) || 'null'); } catch { return null; }
+  }, []);
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const detected = payload?.help.detectedCitationStyle;
+  const [citationStyle, setCitationStyle] = useState<CitationStyle>(detected === 'MLA' || detected === 'APA' || detected === 'Chicago' ? detected : 'MLA');
+  const [building, setBuilding] = useState(false);
+  const [error, setError] = useState('');
+  if (!payload) return <div className="page narrow empty-state"><h1>No project to explore</h1><p>Start with assignment instructions or a photo.</p><button className="primary" onClick={() => navigate('/help')}>Start a project</button></div>;
+  const { extraction, help } = payload;
+  const buildSelectedPlan = async () => {
+    if (selectedIndex === null) return;
+    setBuilding(true); setError('');
+    try {
+      const selectedIdea = help.projectIdeas[selectedIndex];
+      const plan = await createProjectPlan({ extraction, selectedIdea, citationStyle });
+      const sourceSteps = help.resources.length ? [`Review the ${help.resources.length} credible source${help.resources.length === 1 ? '' : 's'} and record notes with ${citationStyle} citations`] : [];
+      const draft: Draft = {
+        mode: 'assignment',
+        text: [extraction.directions, extraction.visibleContent, extraction.requirements.join('\n')].filter(Boolean).join('\n\n'),
+        title: extraction.title || 'Photo assignment',
+        subject: extraction.subject || 'Other',
+        dueDate: payload.dueDate,
+        suggestedSteps: [...sourceSteps, ...plan.planSteps],
+        aiSummary: plan.summary,
+      };
+      sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+      navigate('/review');
+    } catch {
+      setError('We couldn’t build that direction into a plan right now. Try again.');
+    } finally {
+      setBuilding(false);
+    }
+  };
+  return (
+    <div className="page narrow review-page launchpad-page">
+      <button className="back" onClick={() => navigate('/help')}><ArrowLeft /> Edit the assignment</button>
+      <div className="launch-stages" aria-label="Project stages">{['Understand', 'Explore', 'Choose', 'Plan', 'Build', 'Track'].map((stage, index) => <span className={index < 3 ? 'active' : ''} key={stage}>{index + 1}<small>{stage}</small></span>)}</div>
+      <div className="review-banner"><span><Sparkles /></span><div><p className="eyebrow">PROJECT LAUNCHPAD</p><h1>Choose a direction that feels like yours</h1><p>{help.summary}</p></div></div>
+      <section className="review-card"><div className="review-title"><div><p className="eyebrow">EXPLORE</p><h2>Possible project directions</h2></div><span>{help.projectIdeas.length} ideas</span></div>
+        <div className="idea-grid">{help.projectIdeas.map((idea, index) => <button className={`idea-card ${selectedIndex === index ? 'selected' : ''}`} onClick={() => setSelectedIndex(index)} key={idea.title}><span className="idea-number">{index + 1}</span><h3>{idea.title}</h3><p>{idea.description}</p><dl><dt>Materials or approach</dt><dd>{idea.approach}</dd><dt>Why it fits</dt><dd>{idea.whyItFits}</dd></dl><span className="idea-choice">{selectedIndex === index ? <><Check /> Selected</> : 'Choose this direction'}</span></button>)}</div>
+      </section>
+      <section className="review-card"><p className="eyebrow">CREDIBLE RESOURCES</p><h2>Research and inspiration</h2>
+        {help.resources.length === 0 ? <p className="resource-empty">No verified direct resources are available for this topic yet. StudySteps will not invent links or source details.</p> :
+          <div className="resource-list">{help.resources.map(resource => <article className="resource-card" key={resource.url}><div><span className="resource-type">{resource.resourceType}</span><h3>{resource.title}</h3><strong>{resource.organization}</strong></div><p><b>Why it’s credible:</b> {resource.credibility}</p><p><b>Use it for:</b> {resource.supports}</p><p><b>Published or updated:</b> {resource.date}</p><a href={resource.url} target="_blank" rel="noreferrer">Open resource <ArrowRight /></a></article>)}</div>}
+      </section>
+      {help.resources.length > 0 && <section className="review-card citation-card"><p className="eyebrow">CITATION SUPPORT</p><div className="citation-heading"><h2>{detected && detected !== 'Not specified' ? `${detected} was detected in the directions` : 'Choose a citation style'}</h2><select value={citationStyle} onChange={e => setCitationStyle(e.target.value as CitationStyle)}><option>MLA</option><option>APA</option><option>Chicago</option></select></div>
+        {help.resources.map(resource => <div className="citation-example" key={resource.url}><strong>{resource.title}</strong><p>{citationFor(resource, citationStyle)}</p><small><b>In-text example:</b> {inTextFor(resource, citationStyle)}</small><small>Parts: organization/author · publication date when available · title · direct URL. Verify these details on the source page before submitting.</small></div>)}
+      </section>}
+      {error && <div className="photo-input-error" role="alert"><HelpCircle />{error}</div>}
+      <div className="approval-box"><div><strong>Ready to turn your choice into a plan?</strong><span>You choose the direction. StudySteps will create editable Plan, Build, and Track steps.</span></div><button className="primary" disabled={selectedIndex === null || building} onClick={buildSelectedPlan}>{building ? 'Building your plan…' : <><ArrowRight /> Build my plan</>}</button></div>
+      <p className="never-auto"><CheckCircle2 /> The plan remains editable and is never saved until you approve it.</p>
     </div>
   );
 }
@@ -677,6 +748,7 @@ function AppRouter() {
     <Route path="/help"><GetHelp /></Route>
     <Route path="/review"><Review saveAssignment={saveAssignment} /></Route>
     <Route path="/photo-help"><PhotoHelpReview /></Route>
+    <Route path="/project-launchpad"><ProjectLaunchpad /></Route>
     <Route path="/assignments/:id"><AssignmentDetails assignments={items} setAssignments={setItems} /></Route>
     <Route component={NotFound} />
   </Switch></RoutedErrorBoundary></Shell>;

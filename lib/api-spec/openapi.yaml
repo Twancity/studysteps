@@ -70,6 +70,28 @@ paths:
           description: Invalid reviewed extraction
         "502":
           description: AI provider failed
+  /project-plan:
+    post:
+      operationId: createProjectPlan
+      tags: [photo-help]
+      summary: Build a project plan after the student chooses a direction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectPlanInput"
+      responses:
+        "200":
+          description: Personalized plan based on the selected direction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectPlanResult"
+        "400":
+          description: Invalid project direction
+        "502":
+          description: AI provider failed
 components:
   schemas:
     HealthStatus:
@@ -175,5 +197,76 @@ components:
           type: array
           items:
             type: string
-      required: [kind, heading, explanation, keyIdeas, exampleProblem, exampleSteps, exampleAnswer, actualProblems, guidedTry, understandingCheck, summary, planSteps]
+        projectIdeas:
+          type: array
+          items:
+            type: object
+            properties:
+              title:
+                type: string
+              description:
+                type: string
+              approach:
+                type: string
+              whyItFits:
+                type: string
+            required: [title, description, approach, whyItFits]
+        resources:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResearchResource"
+        detectedCitationStyle:
+          type: string
+          enum: [MLA, APA, Chicago, Not specified]
+      required: [kind, heading, explanation, keyIdeas, exampleProblem, exampleSteps, exampleAnswer, actualProblems, guidedTry, understandingCheck, summary, planSteps, projectIdeas, resources, detectedCitationStyle]
+    ResearchResource:
+      type: object
+      properties:
+        title:
+          type: string
+        organization:
+          type: string
+        credibility:
+          type: string
+        supports:
+          type: string
+        date:
+          type: string
+        url:
+          type: string
+        resourceType:
+          type: string
+          enum: [article, activity, image, video]
+      required: [title, organization, credibility, supports, date, url, resourceType]
+    ProjectPlanInput:
+      type: object
+      properties:
+        extraction:
+          $ref: "#/components/schemas/PhotoExtraction"
+        selectedIdea:
+          type: object
+          properties:
+            title:
+              type: string
+            description:
+              type: string
+            approach:
+              type: string
+            whyItFits:
+              type: string
+          required: [title, description, approach, whyItFits]
+        citationStyle:
+          type: string
+          enum: [MLA, APA, Chicago]
+      required: [extraction, selectedIdea, citationStyle]
+    ProjectPlanResult:
+      type: object
+      properties:
+        summary:
+          type: string
+        planSteps:
+          type: array
+          items:
+            type: string
+      required: [summary, planSteps]
 

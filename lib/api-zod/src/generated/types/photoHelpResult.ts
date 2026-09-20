@@ -6,6 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { PhotoHelpResultActualProblemsItem } from './photoHelpResultActualProblemsItem';
+import type { PhotoHelpResultDetectedCitationStyle } from './photoHelpResultDetectedCitationStyle';
+import type { PhotoHelpResultProjectIdeasItem } from './photoHelpResultProjectIdeasItem';
+import type { ResearchResource } from './researchResource';
 import type { SchoolworkKind } from './schoolworkKind';
 
 export interface PhotoHelpResult {
@@ -21,4 +24,7 @@ export interface PhotoHelpResult {
   understandingCheck: string;
   summary: string;
   planSteps: string[];
+  projectIdeas: PhotoHelpResultProjectIdeasItem[];
+  resources: ResearchResource[];
+  detectedCitationStyle: PhotoHelpResultDetectedCitationStyle;
 }

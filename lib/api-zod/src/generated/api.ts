@@ -79,6 +79,53 @@ export const CreatePhotoHelpResponse = zod.object({
   "guidedTry": zod.string(),
   "understandingCheck": zod.string(),
   "summary": zod.string(),
+  "planSteps": zod.array(zod.string()),
+  "projectIdeas": zod.array(zod.object({
+  "title": zod.string(),
+  "description": zod.string(),
+  "approach": zod.string(),
+  "whyItFits": zod.string()
+})),
+  "resources": zod.array(zod.object({
+  "title": zod.string(),
+  "organization": zod.string(),
+  "credibility": zod.string(),
+  "supports": zod.string(),
+  "date": zod.string(),
+  "url": zod.string(),
+  "resourceType": zod.enum(['article', 'activity', 'image', 'video'])
+})),
+  "detectedCitationStyle": zod.enum(['MLA', 'APA', 'Chicago', 'Not specified'])
+})
+
+
+/**
+ * @summary Build a project plan after the student chooses a direction
+ */
+export const CreateProjectPlanBody = zod.object({
+  "extraction": zod.object({
+  "kind": zod.enum(['worksheet_problem', 'assignment_project', 'concept_topic']),
+  "title": zod.string(),
+  "directions": zod.string(),
+  "visibleContent": zod.string(),
+  "gradeLevel": zod.string(),
+  "subject": zod.string(),
+  "skill": zod.string(),
+  "requirements": zod.array(zod.string()),
+  "readable": zod.boolean(),
+  "note": zod.string()
+}),
+  "selectedIdea": zod.object({
+  "title": zod.string(),
+  "description": zod.string(),
+  "approach": zod.string(),
+  "whyItFits": zod.string()
+}),
+  "citationStyle": zod.enum(['MLA', 'APA', 'Chicago'])
+})
+
+export const CreateProjectPlanResponse = zod.object({
+  "summary": zod.string(),
   "planSteps": zod.array(zod.string())
 })
 

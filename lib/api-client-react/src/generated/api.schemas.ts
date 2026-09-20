@@ -57,6 +57,43 @@ export type PhotoHelpResultActualProblemsItem = {
   answer: string;
 };
 
+export type PhotoHelpResultProjectIdeasItem = {
+  title: string;
+  description: string;
+  approach: string;
+  whyItFits: string;
+};
+
+export type PhotoHelpResultDetectedCitationStyle = typeof PhotoHelpResultDetectedCitationStyle[keyof typeof PhotoHelpResultDetectedCitationStyle];
+
+
+export const PhotoHelpResultDetectedCitationStyle = {
+  MLA: 'MLA',
+  APA: 'APA',
+  Chicago: 'Chicago',
+  Not_specified: 'Not specified',
+} as const;
+
+export type ResearchResourceResourceType = typeof ResearchResourceResourceType[keyof typeof ResearchResourceResourceType];
+
+
+export const ResearchResourceResourceType = {
+  article: 'article',
+  activity: 'activity',
+  image: 'image',
+  video: 'video',
+} as const;
+
+export interface ResearchResource {
+  title: string;
+  organization: string;
+  credibility: string;
+  supports: string;
+  date: string;
+  url: string;
+  resourceType: ResearchResourceResourceType;
+}
+
 export interface PhotoHelpResult {
   kind: SchoolworkKind;
   heading: string;
@@ -68,6 +105,36 @@ export interface PhotoHelpResult {
   actualProblems: PhotoHelpResultActualProblemsItem[];
   guidedTry: string;
   understandingCheck: string;
+  summary: string;
+  planSteps: string[];
+  projectIdeas: PhotoHelpResultProjectIdeasItem[];
+  resources: ResearchResource[];
+  detectedCitationStyle: PhotoHelpResultDetectedCitationStyle;
+}
+
+export type ProjectPlanInputSelectedIdea = {
+  title: string;
+  description: string;
+  approach: string;
+  whyItFits: string;
+};
+
+export type ProjectPlanInputCitationStyle = typeof ProjectPlanInputCitationStyle[keyof typeof ProjectPlanInputCitationStyle];
+
+
+export const ProjectPlanInputCitationStyle = {
+  MLA: 'MLA',
+  APA: 'APA',
+  Chicago: 'Chicago',
+} as const;
+
+export interface ProjectPlanInput {
+  extraction: PhotoExtraction;
+  selectedIdea: ProjectPlanInputSelectedIdea;
+  citationStyle: ProjectPlanInputCitationStyle;
+}
+
+export interface ProjectPlanResult {
   summary: string;
   planSteps: string[];
 }
