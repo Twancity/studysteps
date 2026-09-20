@@ -26,8 +26,5 @@ export interface ConceptHelpResult {
   practiceHints: string[];
   /** @minItems 2 */
   practiceSteps: string[];
-  practiceAnswer: string;
-  /** @minItems 1 */
-  practiceAcceptedAnswers: string[];
   understandingCheck: string;
 }

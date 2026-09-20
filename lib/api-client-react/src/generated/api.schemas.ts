@@ -53,8 +53,7 @@ export interface PhotoHelpInput {
 
 export type PhotoHelpResultActualProblemsItem = {
   problem: string;
-  steps: string[];
-  answer: string;
+  hints: string[];
 };
 
 export type PhotoHelpResultProjectIdeasItem = {
@@ -171,9 +170,6 @@ export interface ConceptHelpResult {
   practiceHints: string[];
   /** @minItems 2 */
   practiceSteps: string[];
-  practiceAnswer: string;
-  /** @minItems 1 */
-  practiceAcceptedAnswers: string[];
   understandingCheck: string;
 }
 
@@ -185,10 +181,9 @@ export interface ConceptAnswerCheckInput {
   studentRequest: string;
   topic: string;
   gradeLevel: string;
+  subject: string;
   practiceProblem: string;
-  practiceAnswer: string;
-  /** @minItems 1 */
-  practiceAcceptedAnswers: string[];
+  context: string;
   /**
      * @minLength 1
      * @maxLength 1000
@@ -199,5 +194,31 @@ export interface ConceptAnswerCheckInput {
 export interface ConceptAnswerCheckResult {
   isCorrect: boolean;
   feedback: string;
+}
+
+export type ProblemAnswerRevealInputFlow = typeof ProblemAnswerRevealInputFlow[keyof typeof ProblemAnswerRevealInputFlow];
+
+
+export const ProblemAnswerRevealInputFlow = {
+  concept: 'concept',
+  photo: 'photo',
+} as const;
+
+export interface ProblemAnswerRevealInput {
+  flow: ProblemAnswerRevealInputFlow;
+  /** @maxLength 2000 */
+  studentRequest: string;
+  topic: string;
+  gradeLevel: string;
+  subject: string;
+  problem: string;
+  /** @maxLength 10000 */
+  context: string;
+}
+
+export interface ProblemAnswerRevealResult {
+  /** @minItems 1 */
+  reasoning: string[];
+  answer: string;
 }
 

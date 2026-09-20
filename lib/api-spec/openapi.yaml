@@ -138,6 +138,28 @@ paths:
           description: Invalid answer-check request
         "502":
           description: AI provider failed
+  /problem-answer-reveal:
+    post:
+      operationId: revealProblemAnswer
+      tags: [concept-help, photo-help]
+      summary: Reveal reasoning and a final answer after explicit student request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProblemAnswerRevealInput"
+      responses:
+        "200":
+          description: Step-by-step reasoning and final answer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemAnswerRevealResult"
+        "400":
+          description: Invalid reveal request
+        "502":
+          description: AI provider failed
 components:
   schemas:
     HealthStatus:
@@ -226,13 +248,11 @@ components:
             properties:
               problem:
                 type: string
-              steps:
+              hints:
                 type: array
                 items:
                   type: string
-              answer:
-                type: string
-            required: [problem, steps, answer]
+            required: [problem, hints]
         guidedTry:
           type: string
         understandingCheck:
@@ -377,16 +397,9 @@ components:
           minItems: 2
           items:
             type: string
-        practiceAnswer:
-          type: string
-        practiceAcceptedAnswers:
-          type: array
-          minItems: 1
-          items:
-            type: string
         understandingCheck:
           type: string
-      required: [topic, gradeLevel, subject, studentGoal, heading, explanation, keyIdeas, exampleProblem, exampleSteps, exampleAnswer, guidedTry, practiceProblem, practiceHints, practiceSteps, practiceAnswer, practiceAcceptedAnswers, understandingCheck]
+      required: [topic, gradeLevel, subject, studentGoal, heading, explanation, keyIdeas, exampleProblem, exampleSteps, exampleAnswer, guidedTry, practiceProblem, practiceHints, practiceSteps, understandingCheck]
     ConceptAnswerCheckInput:
       type: object
       properties:
@@ -398,20 +411,17 @@ components:
           type: string
         gradeLevel:
           type: string
+        subject:
+          type: string
         practiceProblem:
           type: string
-        practiceAnswer:
+        context:
           type: string
-        practiceAcceptedAnswers:
-          type: array
-          minItems: 1
-          items:
-            type: string
         studentAnswer:
           type: string
           minLength: 1
           maxLength: 1000
-      required: [studentRequest, topic, gradeLevel, practiceProblem, practiceAnswer, practiceAcceptedAnswers, studentAnswer]
+      required: [studentRequest, topic, gradeLevel, subject, practiceProblem, context, studentAnswer]
     ConceptAnswerCheckResult:
       type: object
       properties:
@@ -420,4 +430,36 @@ components:
         feedback:
           type: string
       required: [isCorrect, feedback]
+    ProblemAnswerRevealInput:
+      type: object
+      properties:
+        flow:
+          type: string
+          enum: [concept, photo]
+        studentRequest:
+          type: string
+          maxLength: 2000
+        topic:
+          type: string
+        gradeLevel:
+          type: string
+        subject:
+          type: string
+        problem:
+          type: string
+        context:
+          type: string
+          maxLength: 10000
+      required: [flow, studentRequest, topic, gradeLevel, subject, problem, context]
+    ProblemAnswerRevealResult:
+      type: object
+      properties:
+        reasoning:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        answer:
+          type: string
+      required: [reasoning, answer]
 

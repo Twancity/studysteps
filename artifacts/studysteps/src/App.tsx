@@ -1,6 +1,6 @@
 import { type ChangeEvent, type DragEvent, type ReactNode, useEffect, useMemo, useRef, useState, useCallback, createContext, useContext } from 'react';
-import { analyzePhoto, checkConceptAnswer, createPhotoHelp, createProjectPlan, createConceptHelp } from '@workspace/api-client-react';
-import type { PhotoExtraction, PhotoHelpResult, ConceptHelpResult } from '@workspace/api-client-react';
+import { analyzePhoto, checkConceptAnswer, createPhotoHelp, createProjectPlan, createConceptHelp, revealProblemAnswer } from '@workspace/api-client-react';
+import type { PhotoExtraction, PhotoHelpResult, ConceptHelpResult, ProblemAnswerRevealResult } from '@workspace/api-client-react';
 import {
   ArrowLeft, ArrowRight, BookOpen, CalendarDays, Camera, Check, CheckCircle2,
   ChevronDown, ChevronUp, Circle, Clock3, GripVertical, HelpCircle, Home,
@@ -444,17 +444,36 @@ function GetHelp() {
     if (file) handlePhotoFile(file);
   };
 
-  const handlePhotoFile = (file: File) => {
+  const handlePhotoFile = async (file: File) => {
     const generation = ++photoGeneration.current;
     analysisGeneration.current += 1;
     setAnalyzing(false);
     setPhotoError('');
     setExtraction(null);
     const extension = file.name.split('.').pop()?.toLowerCase();
-    const supportedType = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'].includes(file.type);
-    const supportedExtension = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'].includes(extension ?? '');
-    if (!supportedType && !supportedExtension) {
-      setPhotoError('That file type is not supported. Choose a JPEG, PNG, WebP, HEIC, or HEIF image.');
+    const explicitlyUnsupported = ['image/heic', 'image/heif'].includes(file.type)
+      || ['heic', 'heif'].includes(extension ?? '');
+    const supportedType = ['image/jpeg', 'image/png', 'image/webp'].includes(file.type);
+    const supportedExtension = ['jpg', 'jpeg', 'png', 'webp'].includes(extension ?? '');
+    if (explicitlyUnsupported || (!supportedType && !supportedExtension)) {
+      setPhotoError('That file type isn’t supported yet. Choose a JPEG/JPG, PNG, or WebP image.');
+      return;
+    }
+    try {
+      const bytes = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+      if (photoGeneration.current !== generation) return;
+      const isJpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+      const isPng = bytes.length >= 8
+        && [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((value, index) => bytes[index] === value);
+      const isWebp = bytes.length >= 12
+        && String.fromCharCode(...bytes.slice(0, 4)) === 'RIFF'
+        && String.fromCharCode(...bytes.slice(8, 12)) === 'WEBP';
+      if (!isJpeg && !isPng && !isWebp) {
+        setPhotoError('That image format isn’t supported yet. Choose a JPEG/JPG, PNG, or WebP image.');
+        return;
+      }
+    } catch {
+      if (photoGeneration.current === generation) setPhotoError('We couldn’t check that image. Try another JPEG/JPG, PNG, or WebP file.');
       return;
     }
     const reader = new FileReader();
@@ -604,9 +623,9 @@ function GetHelp() {
         </div>
         {method === 'photo' && <div className="input-panel">
           {photo ? <div className="photo-preview" onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
-            <img src={photo} alt="Selected schoolwork preview" onError={() => { setPhoto(null); setPhotoError('This device can’t preview that image format. Try a JPEG or PNG instead.'); }} />
+            <img src={photo} alt="Selected schoolwork preview" onError={() => { setPhoto(null); setPhotoError('This device can’t preview that image. Try a JPEG/JPG, PNG, or WebP file instead.'); }} />
             <div className="photo-preview-actions">
-              <label className="replace-photo"><Upload /><span>Replace photo</span><input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif" onChange={handlePhoto} data-testid="input-replace-photo" /></label>
+              <label className="replace-photo"><Upload /><span>Replace photo</span><input type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" onChange={handlePhoto} data-testid="input-replace-photo" /></label>
               <button onClick={() => { photoGeneration.current += 1; analysisGeneration.current += 1; setAnalyzing(false); setPhoto(null); setExtraction(null); setPhotoError(''); }} aria-label="Remove photo" data-testid="button-remove-photo"><X /><span>Remove</span></button>
             </div>
           </div> :
@@ -619,8 +638,8 @@ function GetHelp() {
             >
               <div className="photo-source-heading"><Camera /><div><strong>Add a photo of your schoolwork</strong><span>Use a clear, well-lit picture of the whole page. <span className="drop-copy">Or drag and drop it here.</span></span></div></div>
               <div className="photo-source-actions">
-                <label className="photo-source-button camera-choice"><Camera /><span><strong>Take photo</strong><small>Open your camera</small></span><input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif" capture="environment" onChange={handlePhoto} data-testid="input-take-photo" /></label>
-                <label className="photo-source-button"><Upload /><span><strong>Choose photo</strong><small>Browse your device</small></span><input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif" onChange={handlePhoto} data-testid="input-choose-photo" /></label>
+                <label className="photo-source-button camera-choice"><Camera /><span><strong>Take photo</strong><small>Open your camera</small></span><input type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" capture="environment" onChange={handlePhoto} data-testid="input-take-photo" /></label>
+                <label className="photo-source-button"><Upload /><span><strong>Choose photo</strong><small>JPEG/JPG, PNG, or WebP</small></span><input type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" onChange={handlePhoto} data-testid="input-choose-photo" /></label>
               </div>
             </div>}
           {photoError && <div className="photo-input-error" role="alert"><HelpCircle /><span>{photoError}</span></div>}
@@ -823,7 +842,8 @@ function ConceptReview({ draft }: { draft: Draft }) {
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [hintLevel, setHintLevel] = useState(0);
   const [stepLevel, setStepLevel] = useState(0);
-  const [answerVisible, setAnswerVisible] = useState(false);
+  const [revealedAnswer, setRevealedAnswer] = useState<ProblemAnswerRevealResult | null>(null);
+  const [revealState, setRevealState] = useState<'idle' | 'loading' | 'error'>('idle');
   const [studentAnswer, setStudentAnswer] = useState('');
   const [checkResult, setCheckResult] = useState<'idle' | 'checking' | 'correct' | 'incorrect' | 'error'>('idle');
   const [checkFeedback, setCheckFeedback] = useState('');
@@ -867,9 +887,9 @@ function ConceptReview({ draft }: { draft: Draft }) {
         studentRequest: topic,
         topic: guide.topic,
         gradeLevel: guide.gradeLevel,
+        subject: guide.subject,
         practiceProblem: guide.practiceProblem,
-        practiceAnswer: guide.practiceAnswer,
-        practiceAcceptedAnswers: guide.practiceAcceptedAnswers,
+        context: [guide.heading, ...guide.explanation, ...guide.keyIdeas, ...guide.practiceHints, ...guide.practiceSteps].join('\n'),
         studentAnswer: studentAnswer.trim(),
       });
       if (checkGeneration.current !== generation) return;
@@ -879,6 +899,36 @@ function ConceptReview({ draft }: { draft: Draft }) {
       if (checkGeneration.current !== generation) return;
       setCheckFeedback('StudySteps couldn’t check that answer right now. Your answer is still here, so you can try again.');
       setCheckResult('error');
+    }
+  };
+
+  const handleReveal = async () => {
+    if (!guide || revealState === 'loading') return;
+    if (activeId === 'concept-practice') stopReading();
+    if (revealedAnswer) {
+      setRevealedAnswer(null);
+      setRevealState('idle');
+      setHintLevel(0);
+      setStepLevel(0);
+      return;
+    }
+    setRevealState('loading');
+    try {
+      const result = await revealProblemAnswer({
+        flow: 'concept',
+        studentRequest: topic,
+        topic: guide.topic,
+        gradeLevel: guide.gradeLevel,
+        subject: guide.subject,
+        problem: guide.practiceProblem,
+        context: [guide.heading, ...guide.explanation, ...guide.keyIdeas, ...guide.practiceHints, ...guide.practiceSteps].join('\n'),
+      });
+      setRevealedAnswer(result);
+      setHintLevel(guide.practiceHints.length);
+      setStepLevel(guide.practiceSteps.length);
+      setRevealState('idle');
+    } catch {
+      setRevealState('error');
     }
   };
 
@@ -965,7 +1015,7 @@ function ConceptReview({ draft }: { draft: Draft }) {
               `Practice problem. ${guide.guidedTry}. ${guide.practiceProblem}`,
               hintLevel > 0 ? `Hints: ${guide.practiceHints.slice(0, hintLevel).join('. ')}` : '',
               stepLevel > 0 ? `Solution steps: ${guide.practiceSteps.slice(0, stepLevel).join('. ')}` : '',
-              answerVisible ? `Final answer: ${guide.practiceAnswer}` : ''
+              revealedAnswer ? `Answer with reasoning: ${revealedAnswer.reasoning.join('. ')}. Final answer: ${revealedAnswer.answer}` : ''
             ].filter(Boolean).join('. ')} 
           />
         </div>
@@ -1030,16 +1080,19 @@ function ConceptReview({ draft }: { draft: Draft }) {
           </div>
         )}
 
-        {answerVisible && (
-          <div className="problem-answer" style={{ marginTop: '15px' }}>
-            <strong>Final answer:</strong> {guide.practiceAnswer}
+        {revealedAnswer && (
+          <div className="answer-reveal" style={{ marginTop: '15px' }}>
+            <strong>Answer with reasoning</strong>
+            <ol>{revealedAnswer.reasoning.map((step, index) => <li key={index}>{step}</li>)}</ol>
+            <p className="problem-answer"><strong>Final answer:</strong> {revealedAnswer.answer}</p>
           </div>
         )}
+        {revealState === 'error' && <div className="photo-input-error" role="alert"><HelpCircle />StudySteps couldn’t reveal that answer right now. Try again.</div>}
 
         <div className="problem-actions" style={{ marginTop: '20px' }}>
           <button 
             className="secondary" 
-            disabled={hintLevel >= guide.practiceHints.length || answerVisible}
+            disabled={hintLevel >= guide.practiceHints.length || !!revealedAnswer}
             onClick={() => {
               if (activeId === 'concept-practice') stopReading();
               setHintLevel(v => Math.min(v + 1, guide.practiceHints.length));
@@ -1050,7 +1103,7 @@ function ConceptReview({ draft }: { draft: Draft }) {
           
           <button 
             className="secondary"
-            disabled={stepLevel >= guide.practiceSteps.length || answerVisible}
+            disabled={stepLevel >= guide.practiceSteps.length || !!revealedAnswer}
             onClick={() => {
               if (activeId === 'concept-practice') stopReading();
               setStepLevel(v => Math.min(v + 1, guide.practiceSteps.length));
@@ -1061,20 +1114,10 @@ function ConceptReview({ draft }: { draft: Draft }) {
 
           <button 
             className="secondary"
-            onClick={() => {
-              if (activeId === 'concept-practice') stopReading();
-              if (!answerVisible) {
-                setAnswerVisible(true);
-                setHintLevel(guide.practiceHints.length);
-                setStepLevel(guide.practiceSteps.length);
-              } else {
-                setAnswerVisible(false);
-                setHintLevel(0);
-                setStepLevel(0);
-              }
-            }}
+            disabled={revealState === 'loading'}
+            onClick={() => void handleReveal()}
           >
-            {answerVisible ? 'Hide Answer' : 'Show Answer'}
+            {revealState === 'loading' ? 'Getting answer…' : revealedAnswer ? 'Hide Answer' : 'Show Answer'}
           </button>
         </div>
       </section>
@@ -1112,10 +1155,44 @@ function PhotoHelpReview() {
   }, []);
   const [studentAnswer, setStudentAnswer] = useState('');
   const [hintLevels, setHintLevels] = useState<Record<number, number>>({});
-  const [revealedAnswers, setRevealedAnswers] = useState<Record<number, boolean>>({});
+  const [revealedAnswers, setRevealedAnswers] = useState<Record<number, ProblemAnswerRevealResult>>({});
+  const [revealStates, setRevealStates] = useState<Record<number, 'loading' | 'error'>>({});
   if (!payload) return <div className="page narrow empty-state"><h1>No photo help to review</h1><p>Start with a photo of the schoolwork you want to understand.</p><button className="primary" onClick={() => navigate('/help')}>Add a photo</button></div>;
   const { extraction, help } = payload;
   const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const togglePhotoAnswer = async (index: number, problem: PhotoHelpResult['actualProblems'][number]) => {
+    if (activeId === `photo-problem-${index}`) stopReading();
+    if (revealedAnswers[index]) {
+      setRevealedAnswers(current => {
+        const next = { ...current };
+        delete next[index];
+        return next;
+      });
+      setHintLevels(current => ({ ...current, [index]: 0 }));
+      return;
+    }
+    if (revealStates[index] === 'loading') return;
+    setRevealStates(current => ({ ...current, [index]: 'loading' }));
+    try {
+      const result = await revealProblemAnswer({
+        flow: 'photo',
+        studentRequest: 'Show the answer after teaching me how to solve this photographed problem.',
+        topic: extraction.skill || extraction.title,
+        gradeLevel: extraction.gradeLevel,
+        subject: extraction.subject,
+        problem: problem.problem,
+        context: [extraction.directions, extraction.visibleContent, ...problem.hints].filter(Boolean).join('\n'),
+      });
+      setRevealedAnswers(current => ({ ...current, [index]: result }));
+      setRevealStates(current => {
+        const next = { ...current };
+        delete next[index];
+        return next;
+      });
+    } catch {
+      setRevealStates(current => ({ ...current, [index]: 'error' }));
+    }
+  };
   return (
     <div className="page narrow review-page photo-help-page">
       <button className="back" onClick={() => navigate('/help')}><ArrowLeft /> Review a different photo</button>
@@ -1148,11 +1225,11 @@ function PhotoHelpReview() {
         <span className="concept-label">YOUR PHOTOGRAPHED WORK</span>
         {help.actualProblems.map((problem, index) => {
           const revealedHintLevels = hintLevels[index] ?? 0;
-          const isRevealed = revealedAnswers[index];
+          const revealed = revealedAnswers[index];
           const textToRead = [
             `Problem: ${problem.problem}.`,
-            revealedHintLevels > 0 ? `Hints: ${problem.steps.slice(0, revealedHintLevels).join('. ')}` : '',
-            isRevealed ? `Answer with reasoning: ${problem.steps.join('. ')}. Final answer: ${problem.answer}` : ''
+            revealedHintLevels > 0 ? `Hints: ${problem.hints.slice(0, revealedHintLevels).join('. ')}` : '',
+            revealed ? `Answer with reasoning: ${revealed.reasoning.join('. ')}. Final answer: ${revealed.answer}` : ''
           ].filter(Boolean).join(' ');
           
           return (
@@ -1162,17 +1239,15 @@ function PhotoHelpReview() {
                 <ReadAloud id={`photo-problem-${index}`} text={textToRead} />
               </div>
               <p>Try this problem using the method above. Ask for a hint when you need one.</p>
-              {(hintLevels[index] ?? 0) > 0 && <div className="progressive-hints"><strong>Hint {hintLevels[index]}</strong><ol>{problem.steps.slice(0, hintLevels[index]).map((step, stepIndex) => <li key={stepIndex}>{step}</li>)}</ol></div>}
-              {revealedAnswers[index] && <div className="answer-reveal"><strong>Answer with reasoning</strong><ol>{problem.steps.map((step, stepIndex) => <li key={stepIndex}>{step}</li>)}</ol><p className="problem-answer"><strong>Final answer:</strong> {problem.answer}</p></div>}
+              {(hintLevels[index] ?? 0) > 0 && <div className="progressive-hints"><strong>Hint {hintLevels[index]}</strong><ol>{problem.hints.slice(0, hintLevels[index]).map((step, stepIndex) => <li key={stepIndex}>{step}</li>)}</ol></div>}
+              {revealed && <div className="answer-reveal"><strong>Answer with reasoning</strong><ol>{revealed.reasoning.map((step, stepIndex) => <li key={stepIndex}>{step}</li>)}</ol><p className="problem-answer"><strong>Final answer:</strong> {revealed.answer}</p></div>}
+              {revealStates[index] === 'error' && <div className="photo-input-error" role="alert"><HelpCircle />StudySteps couldn’t reveal that answer right now. Try again.</div>}
               <div className="problem-actions">
-                <button className="secondary" disabled={revealedAnswers[index] || (hintLevels[index] ?? 0) >= problem.steps.length} onClick={() => {
+                <button className="secondary" disabled={!!revealed || (hintLevels[index] ?? 0) >= problem.hints.length} onClick={() => {
                   if (activeId === `photo-problem-${index}`) stopReading();
-                  setHintLevels(v => ({ ...v, [index]: Math.min((v[index] ?? 0) + 1, problem.steps.length) }));
+                  setHintLevels(v => ({ ...v, [index]: Math.min((v[index] ?? 0) + 1, problem.hints.length) }));
                 }}><HelpCircle /> Give me a hint</button>
-                <button className="primary" onClick={() => {
-                  if (activeId === `photo-problem-${index}`) stopReading();
-                  setRevealedAnswers(v => ({ ...v, [index]: !v[index] }));
-                }}>{revealedAnswers[index] ? 'Hide answer' : 'Show Answer'}</button>
+                <button className="primary" disabled={revealStates[index] === 'loading'} onClick={() => void togglePhotoAnswer(index, problem)}>{revealStates[index] === 'loading' ? 'Getting answer…' : revealed ? 'Hide answer' : 'Show Answer'}</button>
               </div>
             </div>
           );
@@ -1273,10 +1348,10 @@ function ProjectLaunchpad() {
       </section>
       <section className="review-card">
         <div className="review-title">
-          <div><p className="eyebrow">CREDIBLE RESOURCES</p><h2>Research and inspiration</h2></div>
+          <div><p className="eyebrow">VERIFIED SOURCES</p><h2>Validated sources when available</h2></div>
           {help.resources.length > 0 && <ReadAloud id="launchpad-resources" text={`Research and inspiration. ${help.resources.map(r => `${r.title} by ${r.organization}. Why it's credible: ${r.credibility}. Use it for: ${r.supports}.`).join(' ')}`} label="Read resources" />}
         </div>
-        {help.resources.length === 0 ? <p className="resource-empty">No verified direct resources are available for this topic yet. StudySteps will not invent links or source details.</p> :
+        {help.resources.length === 0 ? <p className="resource-empty">Verified source suggestions are not available for this topic in the V1 collection. StudySteps will not invent links, citations, or source details.</p> :
           <div className="resource-list">{help.resources.map(resource => <article className="resource-card" key={resource.url}><div><span className="resource-type">{resource.resourceType}</span><h3>{resource.title}</h3><strong>{resource.organization}</strong></div><p><b>Why it’s credible:</b> {resource.credibility}</p><p><b>Use it for:</b> {resource.supports}</p><p><b>Published or updated:</b> {resource.date}</p><a href={resource.url} target="_blank" rel="noreferrer">Open resource <ArrowRight /></a></article>)}</div>}
       </section>
       {help.resources.length > 0 && <section className="review-card citation-card">

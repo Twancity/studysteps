@@ -73,8 +73,7 @@ export const CreatePhotoHelpResponse = zod.object({
   "exampleAnswer": zod.string(),
   "actualProblems": zod.array(zod.object({
   "problem": zod.string(),
-  "steps": zod.array(zod.string()),
-  "answer": zod.string()
+  "hints": zod.array(zod.string())
 })),
   "guidedTry": zod.string(),
   "understandingCheck": zod.string(),
@@ -155,7 +154,6 @@ export const createConceptHelpResponsePracticeStepsMin = 2;
 
 
 
-
 export const CreateConceptHelpResponse = zod.object({
   "topic": zod.string(),
   "gradeLevel": zod.string(),
@@ -171,8 +169,6 @@ export const CreateConceptHelpResponse = zod.object({
   "practiceProblem": zod.string(),
   "practiceHints": zod.array(zod.string()).min(createConceptHelpResponsePracticeHintsMin),
   "practiceSteps": zod.array(zod.string()).min(createConceptHelpResponsePracticeStepsMin),
-  "practiceAnswer": zod.string(),
-  "practiceAcceptedAnswers": zod.array(zod.string()).min(1),
   "understandingCheck": zod.string()
 })
 
@@ -183,7 +179,6 @@ export const CreateConceptHelpResponse = zod.object({
 export const checkConceptAnswerBodyStudentRequestMin = 3;
 export const checkConceptAnswerBodyStudentRequestMax = 2000;
 
-
 export const checkConceptAnswerBodyStudentAnswerMax = 1000;
 
 
@@ -192,15 +187,43 @@ export const CheckConceptAnswerBody = zod.object({
   "studentRequest": zod.string().min(checkConceptAnswerBodyStudentRequestMin).max(checkConceptAnswerBodyStudentRequestMax),
   "topic": zod.string(),
   "gradeLevel": zod.string(),
+  "subject": zod.string(),
   "practiceProblem": zod.string(),
-  "practiceAnswer": zod.string(),
-  "practiceAcceptedAnswers": zod.array(zod.string()).min(1),
+  "context": zod.string(),
   "studentAnswer": zod.string().min(1).max(checkConceptAnswerBodyStudentAnswerMax)
 })
 
 export const CheckConceptAnswerResponse = zod.object({
   "isCorrect": zod.boolean(),
   "feedback": zod.string()
+})
+
+
+/**
+ * @summary Reveal reasoning and a final answer after explicit student request
+ */
+export const revealProblemAnswerBodyStudentRequestMax = 2000;
+
+export const revealProblemAnswerBodyContextMax = 10000;
+
+
+
+export const RevealProblemAnswerBody = zod.object({
+  "flow": zod.enum(['concept', 'photo']),
+  "studentRequest": zod.string().max(revealProblemAnswerBodyStudentRequestMax),
+  "topic": zod.string(),
+  "gradeLevel": zod.string(),
+  "subject": zod.string(),
+  "problem": zod.string(),
+  "context": zod.string().max(revealProblemAnswerBodyContextMax)
+})
+
+
+
+
+export const RevealProblemAnswerResponse = zod.object({
+  "reasoning": zod.array(zod.string()).min(1),
+  "answer": zod.string()
 })
 
 

@@ -9,6 +9,7 @@ import {
 } from "@workspace/api-zod";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { logger } from "../lib/logger";
+import { assertNoStudentAnswerLeak, generateWithSafetyRetries } from "../lib/answer-leak-guard";
 
 const router: IRouter = Router();
 const supportedImage = /^data:image\/(?:jpeg|png|webp);base64,/i;
@@ -131,7 +132,8 @@ router.post("/photo-help", async (req: Request, res: Response) => {
   }
 
   try {
-    const completion = await openai.chat.completions.create({
+    const result = await generateWithSafetyRetries(async () => {
+      const completion = await openai.chat.completions.create({
       model: "gpt-5.4-mini",
       max_completion_tokens: 8192,
       response_format: {
@@ -157,10 +159,9 @@ router.post("/photo-help", async (req: Request, res: Response) => {
                   additionalProperties: false,
                   properties: {
                     problem: { type: "string" },
-                    steps: { type: "array", items: { type: "string" } },
-                    answer: { type: "string" },
+                    hints: { type: "array", items: { type: "string" } },
                   },
-                  required: ["problem", "steps", "answer"],
+                  required: ["problem", "hints"],
                 },
               },
               guidedTry: { type: "string" },
@@ -213,13 +214,16 @@ router.post("/photo-help", async (req: Request, res: Response) => {
 
 For worksheet_problem:
 - identify and explain the practiced skill in plain language
-- give one different concrete worked example with numbered reasoning
-- prepare reasoning and answers for each actual visible problem, but the UI will hide these until the student chooses Show Answer
-- include a simple guided try, progressive-hint-ready reasoning, and understanding check
+- give one different concrete worked example with numbered reasoning; it must not be equivalent to any actual visible problem and must have a different final answer
+- include each actual visible problem with progressive hints that teach the next move without giving away its final answer
+- do not calculate, state, imply, encode, or include final answers for the student's actual visible problems anywhere in this response; those are requested separately only after Show Answer
+- include a simple guided try and understanding check
 - keep planSteps empty
 - keep projectIdeas and resources empty and detectedCitationStyle "Not specified"
 - list a worksheet in deliverables only when the approved directions or visible content indicate that the worksheet itself must be submitted, handed in, uploaded, or brought to class
-- for missing-addend equations, explicitly explain that the blank is the number added to make the total. For "54 + ____ = 54", explain that adding 0 does not change 54, so the blank is 0.
+- for missing-addend equations, explain that the blank represents the number added to make the total and teach the additive-identity strategy, but stop before filling the student's blank or stating its value
+- when a target has the form n + ____ = n, do not mention the target's answer in words or numerals anywhere in this response; refer only to "the identity amount that leaves a number unchanged"
+- for that target, the worked example must instead be a nonzero missing-addend problem whose total differs from the known addend; do not use another identity example because it would have the same final answer
 
 For assignment_project:
 - produce a concise summary and exactly 3 meaningfully different projectIdeas. Each must include a description, concrete materials/approach, and why it fits detected requirements.
@@ -237,19 +241,69 @@ For every kind:
 - set turnInMethod to the explicit method stated in the approved extraction, such as "Upload through Google Classroom", "Hand to teacher", "Bring to class", or "Present in class"
 - when no submission method is stated, return exactly "Turn-in method not provided"
 
-Support learning and reasoning. It is acceptable to provide a solution with reasoning. Never write a submission-ready essay or complete a graded creative project for the student.`,
+Support learning and reasoning. A different, clearly labeled worked example may include its solution. Do not solve the student's actual worksheet problems in this response; those answers are generated only after the student explicitly chooses Show Answer. Never write a submission-ready essay or complete a graded creative project for the student.`,
         },
         {
           role: "user",
           content: `Student request: ${parsed.data.studentRequest || "Help me with this."}\n\nStudent-approved extraction:\n${JSON.stringify(parsed.data.extraction, null, 2)}`,
         },
       ],
+      });
+      const modelResult = parseModelJson(completion.choices[0]?.message?.content ?? null);
+      if (parsed.data.extraction.kind === "worksheet_problem" && Array.isArray(modelResult.actualProblems)) {
+        modelResult.actualProblems = modelResult.actualProblems.map((problem: { problem: string }) => ({
+          problem: problem.problem,
+          hints: [
+            "Identify what the problem is asking you to find.",
+            `Use the ${parsed.data.extraction.skill || "same"} method from the worked example with the information in this problem.`,
+            "Write the setup and reasoning, then pause before calculating or stating the final answer.",
+          ],
+        }));
+        const extractionText = `${parsed.data.extraction.directions}\n${parsed.data.extraction.visibleContent}`;
+        const hasIdentityMissingAddend = /(\d+)\s*\+\s*(?:_{2,}|blank|\?|□)\s*=\s*\1\b/i.test(extractionText);
+        if (hasIdentityMissingAddend) {
+          modelResult.explanation = [
+            "This is a missing-addend equation: the blank represents an unknown amount.",
+            "Compare the starting number with the total, then decide what amount would leave the total unchanged.",
+          ];
+          modelResult.keyIdeas = [
+            "Identify the starting number and the total shown in the equation.",
+            "Choose the amount that keeps both sides of the equation balanced.",
+          ];
+          modelResult.guidedTry = "Cover the blank, compare the starting number with the total, and describe what the missing amount must do without calculating it yet.";
+          modelResult.understandingCheck = "How can you check that a missing addend keeps an equation balanced?";
+        }
+      }
+      modelResult.resources = parsed.data.extraction.kind === "assignment_project"
+        ? verifiedResourcesFor(parsed.data.extraction)
+        : [];
+      const candidate = CreatePhotoHelpResponse.parse(modelResult);
+      if (candidate.kind === "worksheet_problem") {
+        await assertNoStudentAnswerLeak({
+          studentProblems: candidate.actualProblems.map(problem => problem.problem),
+          studentVisibleResponse: candidate,
+          literalScanContent: {
+            heading: candidate.heading,
+            explanation: candidate.explanation,
+            keyIdeas: candidate.keyIdeas,
+            actualProblemHints: candidate.actualProblems.map(problem => problem.hints),
+            guidedTry: candidate.guidedTry,
+            understandingCheck: candidate.understandingCheck,
+            summary: candidate.summary,
+            planSteps: candidate.planSteps,
+            projectIdeas: candidate.projectIdeas,
+            deliverables: candidate.deliverables,
+            turnInMethod: candidate.turnInMethod,
+          },
+          allowedWorkedExample: {
+            problem: candidate.exampleProblem,
+            steps: candidate.exampleSteps,
+            answer: candidate.exampleAnswer,
+          },
+        });
+      }
+      return candidate;
     });
-    const modelResult = parseModelJson(completion.choices[0]?.message?.content ?? null);
-    modelResult.resources = parsed.data.extraction.kind === "assignment_project"
-      ? verifiedResourcesFor(parsed.data.extraction)
-      : [];
-    const result = CreatePhotoHelpResponse.parse(modelResult);
     res.json(result);
   } catch (error) {
     logger.error({ err: error }, "Photo help generation failed");

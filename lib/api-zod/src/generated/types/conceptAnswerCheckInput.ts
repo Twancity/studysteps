@@ -14,10 +14,9 @@ export interface ConceptAnswerCheckInput {
   studentRequest: string;
   topic: string;
   gradeLevel: string;
+  subject: string;
   practiceProblem: string;
-  practiceAnswer: string;
-  /** @minItems 1 */
-  practiceAcceptedAnswers: string[];
+  context: string;
   /**
      * @minLength 1
      * @maxLength 1000

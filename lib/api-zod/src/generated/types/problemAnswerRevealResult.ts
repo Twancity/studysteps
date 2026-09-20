@@ -6,7 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type PhotoHelpResultActualProblemsItem = {
-  problem: string;
-  hints: string[];
-};
+export interface ProblemAnswerRevealResult {
+  /** @minItems 1 */
+  reasoning: string[];
+  answer: string;
+}
