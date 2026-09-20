@@ -28,6 +28,50 @@ See the full [documentation index](docs/README.md).
 
 ---
 
+## Visual product walkthrough
+
+### 1. Dashboard — clear next action
+Students see active work, progress, due timing, and the next unfinished step.
+
+![StudySteps dashboard](screenshots/01-dashboard.png)
+
+### 2. Done & Due — completion is not the same as submission
+Assignments are grouped by urgency so students can see what is overdue, due today, due tomorrow, and coming later.
+
+![Done and Due](screenshots/03-done-and-due.png)
+
+### 3. Multimodal input — type, photo, or voice
+Students can paste instructions, take or upload a photo, drag-and-drop supported images, or use **Tell StudySteps**.
+
+![Photo input](screenshots/04-photo-input.png)
+
+### 4. Human-in-the-loop photo review
+StudySteps extracts the visible schoolwork, then asks the student to review and correct what the AI found before help is generated.
+
+![Photo review](screenshots/06-photo-review.png)
+
+### 5. Grounded worksheet understanding
+The reviewed image is converted into structured details such as subject, worksheet title, visible problems, skill/topic, and requirements.
+
+![Photo review details](screenshots/07-photo-review-details.png)
+
+### 6. Teach the method before the target answer
+StudySteps explains the skill and provides a worked example that is different from the photographed problem.
+
+![Worked example](screenshots/08-concept-help-worked-example.png)
+
+### 7. Explicit answer gating
+The photographed problems remain unrevealed until the student chooses **Show Answer**, with hints available first.
+
+![Teach before answer](screenshots/09-teach-before-answer.png)
+
+### 8. Student-controlled planning
+AI-generated plans remain editable and require explicit approval before they are saved to the student’s work.
+
+![Plan approval](screenshots/10-plan-approval.png)
+
+---
+
 ## The problem
 
 Students can struggle at several different points:
