@@ -164,13 +164,26 @@ function GetHelp() {
   const [subject, setSubject] = useState('English');
   const [dueDate, setDueDate] = useState(isoDate(3));
   const [photo, setPhoto] = useState<string | null>(null);
+  const [photoError, setPhotoError] = useState('');
   const [voiceStatus, setVoiceStatus] = useState('');
   const recognition = useRef<any>(null);
 
   const handlePhoto = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader(); reader.onload = () => setPhoto(String(reader.result)); reader.readAsDataURL(file);
+    setPhotoError('');
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    const supportedType = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'].includes(file.type);
+    const supportedExtension = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'].includes(extension ?? '');
+    if (!supportedType && !supportedExtension) {
+      setPhotoError('That file type is not supported. Choose a JPEG, PNG, WebP, HEIC, or HEIF image.');
+      e.target.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () => setPhotoError('We couldn’t open that image. Try another photo or type the directions below.');
+    reader.onload = () => setPhoto(String(reader.result));
+    reader.readAsDataURL(file);
   };
   const startVoice = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -202,8 +215,15 @@ function GetHelp() {
           <button className={method === 'voice' ? 'active' : ''} onClick={() => setMethod('voice')}><Mic /> Voice</button>
         </div>
         {method === 'photo' && <div className="input-panel">
-          {photo ? <div className="photo-preview"><img src={photo} alt="Selected schoolwork preview" /><button onClick={() => setPhoto(null)} aria-label="Remove photo"><X /></button></div> :
-            <label className="upload-zone"><Upload /><strong>Choose or take a photo</strong><span>Use a clear, well-lit picture of the whole page.</span><input type="file" accept="image/*" capture="environment" onChange={handlePhoto} /></label>}
+          {photo ? <div className="photo-preview"><img src={photo} alt="Selected schoolwork preview" onError={() => { setPhoto(null); setPhotoError('This device can’t preview that image format. Try a JPEG or PNG instead.'); }} /><button onClick={() => { setPhoto(null); setPhotoError(''); }} aria-label="Remove photo"><X /></button></div> :
+            <div className="photo-source-panel">
+              <div className="photo-source-heading"><Camera /><div><strong>Add a photo of your schoolwork</strong><span>Use a clear, well-lit picture of the whole page.</span></div></div>
+              <div className="photo-source-actions">
+                <label className="photo-source-button camera-choice"><Camera /><span><strong>Take photo</strong><small>Open your camera</small></span><input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif" capture="environment" onChange={handlePhoto} /></label>
+                <label className="photo-source-button"><Upload /><span><strong>Choose photo</strong><small>Browse your device</small></span><input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif" onChange={handlePhoto} /></label>
+              </div>
+            </div>}
+          {photoError && <div className="photo-input-error" role="alert"><HelpCircle /><span>{photoError}</span></div>}
           <div className="coming-note"><Sparkles /><span><strong>Photo understanding is coming next.</strong> For now, your photo stays as a preview. Type the important details below so we can build a test plan.</span></div>
         </div>}
         {method === 'voice' && <div className="input-panel voice-panel"><button className="voice-button" onClick={startVoice}><Mic /> Start speaking</button>{voiceStatus && <p role="status">{voiceStatus}</p>}<p className="muted-copy">Voice uses your browser’s built-in speech recognition when available. You can always edit the words below.</p></div>}
