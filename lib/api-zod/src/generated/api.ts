@@ -17,3 +17,69 @@ export const HealthCheckResponse = zod.object({
 })
 
 
+/**
+ * @summary Classify and extract visible schoolwork
+ */
+export const analyzePhotoBodyImageDataUrlMin = 20;
+
+
+
+export const AnalyzePhotoBody = zod.object({
+  "imageDataUrl": zod.string().min(analyzePhotoBodyImageDataUrlMin),
+  "studentRequest": zod.string(),
+  "selectedMode": zod.enum(['assignment', 'concept'])
+})
+
+export const AnalyzePhotoResponse = zod.object({
+  "kind": zod.enum(['worksheet_problem', 'assignment_project', 'concept_topic']),
+  "title": zod.string(),
+  "directions": zod.string(),
+  "visibleContent": zod.string(),
+  "gradeLevel": zod.string(),
+  "subject": zod.string(),
+  "skill": zod.string(),
+  "requirements": zod.array(zod.string()),
+  "readable": zod.boolean(),
+  "note": zod.string()
+})
+
+
+/**
+ * @summary Generate teaching help from student-approved extraction
+ */
+export const CreatePhotoHelpBody = zod.object({
+  "extraction": zod.object({
+  "kind": zod.enum(['worksheet_problem', 'assignment_project', 'concept_topic']),
+  "title": zod.string(),
+  "directions": zod.string(),
+  "visibleContent": zod.string(),
+  "gradeLevel": zod.string(),
+  "subject": zod.string(),
+  "skill": zod.string(),
+  "requirements": zod.array(zod.string()),
+  "readable": zod.boolean(),
+  "note": zod.string()
+}),
+  "studentRequest": zod.string()
+})
+
+export const CreatePhotoHelpResponse = zod.object({
+  "kind": zod.enum(['worksheet_problem', 'assignment_project', 'concept_topic']),
+  "heading": zod.string(),
+  "explanation": zod.array(zod.string()),
+  "keyIdeas": zod.array(zod.string()),
+  "exampleProblem": zod.string(),
+  "exampleSteps": zod.array(zod.string()),
+  "exampleAnswer": zod.string(),
+  "actualProblems": zod.array(zod.object({
+  "problem": zod.string(),
+  "steps": zod.array(zod.string()),
+  "answer": zod.string()
+})),
+  "guidedTry": zod.string(),
+  "understandingCheck": zod.string(),
+  "summary": zod.string(),
+  "planSteps": zod.array(zod.string())
+})
+
+

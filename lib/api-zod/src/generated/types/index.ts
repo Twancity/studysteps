@@ -7,3 +7,10 @@
  */
 
 export * from './healthStatus';
+export * from './photoAnalysisInput';
+export * from './photoAnalysisInputSelectedMode';
+export * from './photoExtraction';
+export * from './photoHelpInput';
+export * from './photoHelpResult';
+export * from './photoHelpResultActualProblemsItem';
+export * from './schoolworkKind';

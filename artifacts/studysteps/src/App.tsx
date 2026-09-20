@@ -1,4 +1,6 @@
 import { type ChangeEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { analyzePhoto, createPhotoHelp } from '@workspace/api-client-react';
+import type { PhotoExtraction, PhotoHelpResult } from '@workspace/api-client-react';
 import {
   ArrowLeft, ArrowRight, BookOpen, CalendarDays, Camera, Check, CheckCircle2,
   ChevronDown, ChevronUp, Circle, Clock3, GripVertical, HelpCircle, Home,
@@ -16,10 +18,11 @@ type Assignment = {
 };
 type Mode = 'assignment' | 'concept';
 type InputMethod = 'text' | 'photo' | 'voice';
-type Draft = { mode: Mode; text: string; title: string; subject: string; dueDate: string };
+type Draft = { mode: Mode; text: string; title: string; subject: string; dueDate: string; suggestedSteps?: string[]; aiSummary?: string };
 
 const STORAGE_KEY = 'studysteps.assignments.v1';
 const DRAFT_KEY = 'studysteps.draft.v1';
+const PHOTO_HELP_KEY = 'studysteps.photo-help.v1';
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const isoDate = (days: number) => {
   const d = new Date(); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10);
@@ -165,6 +168,9 @@ function GetHelp() {
   const [dueDate, setDueDate] = useState(isoDate(3));
   const [photo, setPhoto] = useState<string | null>(null);
   const [photoError, setPhotoError] = useState('');
+  const [extraction, setExtraction] = useState<PhotoExtraction | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [generatingHelp, setGeneratingHelp] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState('');
   const recognition = useRef<any>(null);
 
@@ -172,6 +178,7 @@ function GetHelp() {
     const file = e.target.files?.[0];
     if (!file) return;
     setPhotoError('');
+    setExtraction(null);
     const extension = file.name.split('.').pop()?.toLowerCase();
     const supportedType = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'].includes(file.type);
     const supportedExtension = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'].includes(extension ?? '');
@@ -184,6 +191,48 @@ function GetHelp() {
     reader.onerror = () => setPhotoError('We couldn’t open that image. Try another photo or type the directions below.');
     reader.onload = () => setPhoto(String(reader.result));
     reader.readAsDataURL(file);
+  };
+  const analyzeSelectedPhoto = async () => {
+    if (!photo) return;
+    setAnalyzing(true);
+    setPhotoError('');
+    try {
+      const result = await analyzePhoto({ imageDataUrl: photo, studentRequest: text.trim(), selectedMode: mode });
+      setExtraction(result);
+      if (!result.readable) setPhotoError(result.note || 'Some of this photo may be hard to read. Correct the text below or try a clearer photo.');
+    } catch {
+      setPhotoError('We couldn’t understand that photo right now. Try a JPEG, PNG, or WebP image, retake it more clearly, or type the schoolwork below.');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+  const approveExtraction = async () => {
+    if (!extraction) return;
+    setGeneratingHelp(true);
+    setPhotoError('');
+    try {
+      const help = await createPhotoHelp({ extraction, studentRequest: text.trim() });
+      if (help.kind === 'assignment_project') {
+        const draft: Draft = {
+          mode: 'assignment',
+          text: [extraction.directions, extraction.visibleContent, extraction.requirements.join('\n')].filter(Boolean).join('\n\n'),
+          title: extraction.title || 'Photo assignment',
+          subject: extraction.subject || subject,
+          dueDate,
+          suggestedSteps: help.planSteps,
+          aiSummary: help.summary,
+        };
+        sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+        navigate('/review');
+      } else {
+        sessionStorage.setItem(PHOTO_HELP_KEY, JSON.stringify({ extraction, help }));
+        navigate('/photo-help');
+      }
+    } catch {
+      setPhotoError('We read the photo, but couldn’t create the learning help. Try again or use the corrected text with typed help.');
+    } finally {
+      setGeneratingHelp(false);
+    }
   };
   const startVoice = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -215,7 +264,7 @@ function GetHelp() {
           <button className={method === 'voice' ? 'active' : ''} onClick={() => setMethod('voice')}><Mic /> Voice</button>
         </div>
         {method === 'photo' && <div className="input-panel">
-          {photo ? <div className="photo-preview"><img src={photo} alt="Selected schoolwork preview" onError={() => { setPhoto(null); setPhotoError('This device can’t preview that image format. Try a JPEG or PNG instead.'); }} /><button onClick={() => { setPhoto(null); setPhotoError(''); }} aria-label="Remove photo"><X /></button></div> :
+          {photo ? <div className="photo-preview"><img src={photo} alt="Selected schoolwork preview" onError={() => { setPhoto(null); setPhotoError('This device can’t preview that image format. Try a JPEG or PNG instead.'); }} /><button onClick={() => { setPhoto(null); setExtraction(null); setPhotoError(''); }} aria-label="Remove photo"><X /></button></div> :
             <div className="photo-source-panel">
               <div className="photo-source-heading"><Camera /><div><strong>Add a photo of your schoolwork</strong><span>Use a clear, well-lit picture of the whole page.</span></div></div>
               <div className="photo-source-actions">
@@ -224,7 +273,23 @@ function GetHelp() {
               </div>
             </div>}
           {photoError && <div className="photo-input-error" role="alert"><HelpCircle /><span>{photoError}</span></div>}
-          <div className="coming-note"><Sparkles /><span><strong>Photo understanding is coming next.</strong> For now, your photo stays as a preview. Type the important details below so we can build a test plan.</span></div>
+          {!extraction && <div className="photo-ready-note"><Sparkles /><span><strong>Your photo will guide the help.</strong> We’ll read the visible directions and problems, then ask you to review what we found.</span></div>}
+          {photo && !extraction && <button className="primary full photo-analyze-button" disabled={analyzing || !canContinue} onClick={analyzeSelectedPhoto}>{analyzing ? 'Reading your schoolwork…' : <><Sparkles /> Understand this photo</>}</button>}
+          {extraction && <section className="extraction-review">
+            <div className="extraction-heading"><span><Sparkles /></span><div><p className="eyebrow">PHOTO REVIEW</p><h3>Here’s what I found in your photo</h3><p>Correct anything that was misread before StudySteps creates help.</p></div></div>
+            <div className="extraction-meta">
+              <label className="field"><span>Type of schoolwork</span><select value={extraction.kind} onChange={e => setExtraction({ ...extraction, kind: e.target.value as PhotoExtraction['kind'] })}><option value="worksheet_problem">Worksheet or problems</option><option value="assignment_project">Assignment or project</option><option value="concept_topic">Concept or topic</option></select></label>
+              <label className="field"><span>Grade clues</span><input value={extraction.gradeLevel} onChange={e => setExtraction({ ...extraction, gradeLevel: e.target.value })} /></label>
+              <label className="field"><span>Subject</span><input value={extraction.subject} onChange={e => setExtraction({ ...extraction, subject: e.target.value })} /></label>
+            </div>
+            <label className="field"><span>Worksheet title</span><input value={extraction.title} onChange={e => setExtraction({ ...extraction, title: e.target.value })} /></label>
+            <label className="field"><span>Directions</span><textarea rows={3} value={extraction.directions} onChange={e => setExtraction({ ...extraction, directions: e.target.value })} /></label>
+            <label className="field"><span>Questions, equations, or visible content</span><textarea rows={7} value={extraction.visibleContent} onChange={e => setExtraction({ ...extraction, visibleContent: e.target.value })} /></label>
+            <label className="field"><span>Skill or topic</span><input value={extraction.skill} onChange={e => setExtraction({ ...extraction, skill: e.target.value })} /></label>
+            <label className="field"><span>Important requirements</span><textarea rows={3} value={extraction.requirements.join('\n')} onChange={e => setExtraction({ ...extraction, requirements: e.target.value.split('\n').filter(Boolean) })} placeholder="One requirement per line" /></label>
+            <button className="primary full" disabled={generatingHelp || !extraction.visibleContent.trim()} onClick={approveExtraction}>{generatingHelp ? 'Building the right kind of help…' : <><Check /> Approve and create help</>}</button>
+            <p className="never-auto"><CheckCircle2 /> You control the corrected text. Nothing is saved automatically.</p>
+          </section>}
         </div>}
         {method === 'voice' && <div className="input-panel voice-panel"><button className="voice-button" onClick={startVoice}><Mic /> Start speaking</button>{voiceStatus && <p role="status">{voiceStatus}</p>}<p className="muted-copy">Voice uses your browser’s built-in speech recognition when available. You can always edit the words below.</p></div>}
         <label className="field"><span>{mode === 'assignment' ? 'Assignment directions' : 'Concept or question'}</span><textarea value={text} onChange={e => setText(e.target.value)} rows={7} placeholder={mode === 'assignment' ? 'Paste the directions here, or explain what your teacher asked you to do…' : 'Example: I don’t understand why seasons happen…'} /><small>{text.length} characters · Include enough detail for useful steps.</small></label>
@@ -233,7 +298,7 @@ function GetHelp() {
           <label className="field"><span>Subject</span><select value={subject} onChange={e => setSubject(e.target.value)}><option>English</option><option>Math</option><option>Science</option><option>History</option><option>World Language</option><option>Arts</option><option>Other</option></select></label>
           <label className="field"><span>Due date</span><input type="date" value={dueDate} min={isoDate(0)} onChange={e => setDueDate(e.target.value)} /></label>
         </div>}
-        <button className="primary full" disabled={!canContinue} onClick={continueToReview}>Create a draft to review <ArrowRight /></button>
+        {method !== 'photo' && <button className="primary full" disabled={!canContinue} onClick={continueToReview}>Create a draft to review <ArrowRight /></button>}
         {!canContinue && <p className="form-hint">Add at least a sentence so StudySteps has something to work with.</p>}
       </section>
       <div className="integrity-note compact"><HelpCircle /><span>We’ll suggest a starting point—not produce answers to turn in. You’ll review everything before deciding what to keep.</span></div>
@@ -242,6 +307,9 @@ function GetHelp() {
 }
 
 const buildSteps = (draft: Draft): Step[] => {
+  if (draft.suggestedSteps?.length) {
+    return draft.suggestedSteps.map(text => ({ id: uid(), text, complete: false }));
+  }
   const input = draft.text.toLowerCase();
   const numberWords: Record<string, number> = {
     one: 1, two: 2, three: 3, four: 4, five: 5,
@@ -331,7 +399,7 @@ function Review({ saveAssignment }: { saveAssignment: (a: Assignment) => void })
       <div className="review-banner"><span><Sparkles /></span><div><p className="eyebrow">DRAFT FOR YOUR REVIEW</p><h1>Here’s a possible plan</h1><p>Change anything that doesn’t fit. Nothing is saved until you approve it.</p></div></div>
       <section className="review-card">
         <h2>Plain-language summary</h2>
-        <p>You’re being asked to complete <strong>{title || 'this assignment'}</strong>. The easiest way forward is to identify exactly what the final result needs, gather what you need, and work through one small part at a time.</p>
+        <p>{draft.aiSummary || <>You’re being asked to complete <strong>{title || 'this assignment'}</strong>. The easiest way forward is to identify exactly what the final result needs, gather what you need, and work through one small part at a time.</>}</p>
       </section>
       <section className="review-card">
         <div className="review-title"><div><p className="eyebrow">SUGGESTED STEPS</p><h2>Make this plan yours</h2></div><span>{steps.length} steps</span></div>
@@ -519,6 +587,55 @@ function ConceptReview({ draft }: { draft: Draft }) {
   );
 }
 
+function PhotoHelpReview() {
+  const [, navigate] = useLocation();
+  const payload = useMemo<{ extraction: PhotoExtraction; help: PhotoHelpResult } | null>(() => {
+    try { return JSON.parse(sessionStorage.getItem(PHOTO_HELP_KEY) || 'null'); } catch { return null; }
+  }, []);
+  const [studentAnswer, setStudentAnswer] = useState('');
+  const [showAnswers, setShowAnswers] = useState(false);
+  if (!payload) return <div className="page narrow empty-state"><h1>No photo help to review</h1><p>Start with a photo of the schoolwork you want to understand.</p><button className="primary" onClick={() => navigate('/help')}>Add a photo</button></div>;
+  const { extraction, help } = payload;
+  const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  return (
+    <div className="page narrow review-page photo-help-page">
+      <button className="back" onClick={() => navigate('/help')}><ArrowLeft /> Review a different photo</button>
+      <div className="review-banner concept"><span><Lightbulb /></span><div><p className="eyebrow">{extraction.gradeLevel || 'STUDY HELP'} · {extraction.subject}</p><h1>{help.heading}</h1><p>Built from the schoolwork you reviewed—not a generic project checklist.</p></div></div>
+      <div className="help-actions" aria-label="Ways to get help">
+        <button onClick={() => jump('explain')}><Lightbulb /> Explain this</button>
+        <button onClick={() => jump('example')}><BookOpen /> Show me an example</button>
+        <button onClick={() => jump('solve')}><Sparkles /> Solve one with me</button>
+        <button onClick={() => jump('check')}><CheckCircle2 /> Check my answer</button>
+      </div>
+      <section className="concept-card" id="explain">
+        <span className="concept-label">SKILL: {extraction.skill || 'WHAT THIS PRACTICES'}</span>
+        {help.explanation.map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+        {help.keyIdeas.length > 0 && <ul className="key-list">{help.keyIdeas.map(idea => <li key={idea}><Check /> {idea}</li>)}</ul>}
+      </section>
+      <section className="concept-card worked-example" id="example">
+        <span className="concept-label">WORKED EXAMPLE</span>
+        <h2>{help.exampleProblem}</h2>
+        <ol>{help.exampleSteps.map((step, index) => <li key={index}><span>{index + 1}</span>{step}</li>)}</ol>
+        {help.exampleAnswer && <p className="example-answer"><strong>Answer:</strong> {help.exampleAnswer}</p>}
+      </section>
+      <section className="concept-card" id="solve">
+        <span className="concept-label">YOUR PHOTOGRAPHED WORK</span>
+        {help.actualProblems.map((problem, index) => <div className="actual-problem" key={`${problem.problem}-${index}`}>
+          <h2>{problem.problem}</h2>
+          <ol>{problem.steps.map((step, stepIndex) => <li key={stepIndex}>{step}</li>)}</ol>
+          <button className="secondary" onClick={() => setShowAnswers(v => !v)}>{showAnswers ? 'Hide answer' : 'Show answer with reasoning'}</button>
+          {showAnswers && <p className="problem-answer"><strong>Answer:</strong> {problem.answer}</p>}
+        </div>)}
+        {help.actualProblems.length === 0 && <p>{help.summary}</p>}
+        {help.guidedTry && <div className="guided-try"><strong>Now try this:</strong><span>{help.guidedTry}</span></div>}
+      </section>
+      <section className="check-question" id="check"><HelpCircle /><div><span>CHECK MY ANSWER</span><h2>{help.understandingCheck}</h2><textarea rows={3} value={studentAnswer} onChange={e => setStudentAnswer(e.target.value)} placeholder="Write how you worked it out…" /><p>{studentAnswer.trim() ? 'Good start. Compare each step with the method above, not only the final number.' : 'Explain your thinking so you can check the method as well as the answer.'}</p></div></section>
+      <div className="concept-actions"><button className="secondary" onClick={() => navigate('/help')}>Try another photo</button><button className="primary" onClick={() => navigate('/')}>Done for now</button></div>
+      <div className="integrity-note compact"><Lightbulb /><span>StudySteps may show solutions when they teach the reasoning. Follow your teacher’s rules and write submitted work in your own words.</span></div>
+    </div>
+  );
+}
+
 function AssignmentDetails({ assignments, setAssignments }: { assignments: Assignment[]; setAssignments: React.Dispatch<React.SetStateAction<Assignment[]>> }) {
   const [, params] = useRoute('/assignments/:id');
   const [, navigate] = useLocation();
@@ -559,6 +676,7 @@ function AppRouter() {
     <Route path="/"><Dashboard assignments={items} /></Route>
     <Route path="/help"><GetHelp /></Route>
     <Route path="/review"><Review saveAssignment={saveAssignment} /></Route>
+    <Route path="/photo-help"><PhotoHelpReview /></Route>
     <Route path="/assignments/:id"><AssignmentDetails assignments={items} setAssignments={setItems} /></Route>
     <Route component={NotFound} />
   </Switch></RoutedErrorBoundary></Shell>;

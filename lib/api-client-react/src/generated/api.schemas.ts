@@ -9,3 +9,66 @@ export interface HealthStatus {
   status: string;
 }
 
+export type SchoolworkKind = typeof SchoolworkKind[keyof typeof SchoolworkKind];
+
+
+export const SchoolworkKind = {
+  worksheet_problem: 'worksheet_problem',
+  assignment_project: 'assignment_project',
+  concept_topic: 'concept_topic',
+} as const;
+
+export type PhotoAnalysisInputSelectedMode = typeof PhotoAnalysisInputSelectedMode[keyof typeof PhotoAnalysisInputSelectedMode];
+
+
+export const PhotoAnalysisInputSelectedMode = {
+  assignment: 'assignment',
+  concept: 'concept',
+} as const;
+
+export interface PhotoAnalysisInput {
+  /** @minLength 20 */
+  imageDataUrl: string;
+  studentRequest: string;
+  selectedMode: PhotoAnalysisInputSelectedMode;
+}
+
+export interface PhotoExtraction {
+  kind: SchoolworkKind;
+  title: string;
+  directions: string;
+  visibleContent: string;
+  gradeLevel: string;
+  subject: string;
+  skill: string;
+  requirements: string[];
+  readable: boolean;
+  note: string;
+}
+
+export interface PhotoHelpInput {
+  extraction: PhotoExtraction;
+  studentRequest: string;
+}
+
+export type PhotoHelpResultActualProblemsItem = {
+  problem: string;
+  steps: string[];
+  answer: string;
+};
+
+export interface PhotoHelpResult {
+  kind: SchoolworkKind;
+  heading: string;
+  explanation: string[];
+  keyIdeas: string[];
+  exampleProblem: string;
+  exampleSteps: string[];
+  exampleAnswer: string;
+  actualProblems: PhotoHelpResultActualProblemsItem[];
+  guidedTry: string;
+  understandingCheck: string;
+  summary: string;
+  planSteps: string[];
+}
+

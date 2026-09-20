@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: photo-help
+    description: Temporary multimodal schoolwork analysis and teaching help
 paths:
   /healthz:
     get:
@@ -24,6 +26,50 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /photo-analysis:
+    post:
+      operationId: analyzePhoto
+      tags: [photo-help]
+      summary: Classify and extract visible schoolwork
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PhotoAnalysisInput"
+      responses:
+        "200":
+          description: Editable extraction for student review
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PhotoExtraction"
+        "400":
+          description: Invalid or unreadable image
+        "502":
+          description: Vision provider failed
+  /photo-help:
+    post:
+      operationId: createPhotoHelp
+      tags: [photo-help]
+      summary: Generate teaching help from student-approved extraction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PhotoHelpInput"
+      responses:
+        "200":
+          description: Classification-appropriate learning help
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PhotoHelpResult"
+        "400":
+          description: Invalid reviewed extraction
+        "502":
+          description: AI provider failed
 components:
   schemas:
     HealthStatus:
@@ -33,4 +79,101 @@ components:
           type: string
       required:
         - status
+    SchoolworkKind:
+      type: string
+      enum: [worksheet_problem, assignment_project, concept_topic]
+    PhotoAnalysisInput:
+      type: object
+      properties:
+        imageDataUrl:
+          type: string
+          minLength: 20
+        studentRequest:
+          type: string
+        selectedMode:
+          type: string
+          enum: [assignment, concept]
+      required: [imageDataUrl, studentRequest, selectedMode]
+    PhotoExtraction:
+      type: object
+      properties:
+        kind:
+          $ref: "#/components/schemas/SchoolworkKind"
+        title:
+          type: string
+        directions:
+          type: string
+        visibleContent:
+          type: string
+        gradeLevel:
+          type: string
+        subject:
+          type: string
+        skill:
+          type: string
+        requirements:
+          type: array
+          items:
+            type: string
+        readable:
+          type: boolean
+        note:
+          type: string
+      required: [kind, title, directions, visibleContent, gradeLevel, subject, skill, requirements, readable, note]
+    PhotoHelpInput:
+      type: object
+      properties:
+        extraction:
+          $ref: "#/components/schemas/PhotoExtraction"
+        studentRequest:
+          type: string
+      required: [extraction, studentRequest]
+    PhotoHelpResult:
+      type: object
+      properties:
+        kind:
+          $ref: "#/components/schemas/SchoolworkKind"
+        heading:
+          type: string
+        explanation:
+          type: array
+          items:
+            type: string
+        keyIdeas:
+          type: array
+          items:
+            type: string
+        exampleProblem:
+          type: string
+        exampleSteps:
+          type: array
+          items:
+            type: string
+        exampleAnswer:
+          type: string
+        actualProblems:
+          type: array
+          items:
+            type: object
+            properties:
+              problem:
+                type: string
+              steps:
+                type: array
+                items:
+                  type: string
+              answer:
+                type: string
+            required: [problem, steps, answer]
+        guidedTry:
+          type: string
+        understandingCheck:
+          type: string
+        summary:
+          type: string
+        planSteps:
+          type: array
+          items:
+            type: string
+      required: [kind, heading, explanation, keyIdeas, exampleProblem, exampleSteps, exampleAnswer, actualProblems, guidedTry, understandingCheck, summary, planSteps]
 
