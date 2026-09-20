@@ -1,6 +1,6 @@
 import { type ChangeEvent, type DragEvent, type ReactNode, useEffect, useMemo, useRef, useState, useCallback, createContext, useContext } from 'react';
-import { analyzePhoto, createPhotoHelp, createProjectPlan } from '@workspace/api-client-react';
-import type { PhotoExtraction, PhotoHelpResult } from '@workspace/api-client-react';
+import { analyzePhoto, checkConceptAnswer, createPhotoHelp, createProjectPlan, createConceptHelp } from '@workspace/api-client-react';
+import type { PhotoExtraction, PhotoHelpResult, ConceptHelpResult } from '@workspace/api-client-react';
 import {
   ArrowLeft, ArrowRight, BookOpen, CalendarDays, Camera, Check, CheckCircle2,
   ChevronDown, ChevronUp, Circle, Clock3, GripVertical, HelpCircle, Home,
@@ -139,6 +139,7 @@ type Draft = { mode: Mode; text: string; title: string; subject: string; dueDate
 
 const STORAGE_KEY = 'studysteps.assignments.v1';
 const DRAFT_KEY = 'studysteps.draft.v1';
+const CONCEPT_EDIT_KEY = 'studysteps.edit-concept.v1';
 const PHOTO_HELP_KEY = 'studysteps.photo-help.v1';
 const PROJECT_LAUNCHPAD_KEY = 'studysteps.project-launchpad.v1';
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -404,12 +405,22 @@ function AssignmentCard({ assignment: a, onClick, completed }: { assignment: Ass
 
 function GetHelp() {
   const [, navigate] = useLocation();
-  const [mode, setMode] = useState<Mode>('assignment');
+  const editableConceptDraft = useMemo<Draft | null>(() => {
+    if (sessionStorage.getItem(CONCEPT_EDIT_KEY) !== '1') return null;
+    sessionStorage.removeItem(CONCEPT_EDIT_KEY);
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(DRAFT_KEY) || 'null') as Draft | null;
+      return saved?.mode === 'concept' ? saved : null;
+    } catch {
+      return null;
+    }
+  }, []);
+  const [mode, setMode] = useState<Mode>(editableConceptDraft?.mode ?? 'assignment');
   const [method, setMethod] = useState<InputMethod>('text');
-  const [text, setText] = useState('');
-  const [title, setTitle] = useState('');
-  const [subject, setSubject] = useState('English');
-  const [dueDate, setDueDate] = useState(isoDate(3));
+  const [text, setText] = useState(editableConceptDraft?.text ?? '');
+  const [title, setTitle] = useState(editableConceptDraft?.title ?? '');
+  const [subject, setSubject] = useState(editableConceptDraft?.subject ?? 'English');
+  const [dueDate, setDueDate] = useState(editableConceptDraft?.dueDate ?? isoDate(3));
   const [photo, setPhoto] = useState<string | null>(null);
   const [photoError, setPhotoError] = useState('');
   const [extraction, setExtraction] = useState<PhotoExtraction | null>(null);
@@ -575,7 +586,7 @@ function GetHelp() {
     const draft: Draft = { mode, text: text.trim(), title: title.trim() || text.trim().split(/[.!?\n]/)[0].slice(0, 55), subject, dueDate, deliverables: derived.deliverables, turnInMethod: derived.turnInMethod };
     sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); navigate('/review');
   };
-  const canContinue = text.trim().length >= 10;
+  const canContinue = text.trim().length >= (mode === 'concept' ? 3 : 10);
   return (
     <div className="page narrow">
       <button className="back" onClick={() => navigate('/')}><ArrowLeft /> Dashboard</button>
@@ -657,7 +668,7 @@ function GetHelp() {
           <label className="field"><span>Due date</span><input type="date" value={dueDate} min={isoDate(0)} onChange={e => setDueDate(e.target.value)} /></label>
         </div>}
         {method !== 'photo' && <button className="primary full" disabled={!canContinue} onClick={continueToReview}>Create a draft to review <ArrowRight /></button>}
-        {method !== 'photo' && !canContinue && <p className="form-hint">Add at least a sentence so StudySteps has something to work with.</p>}
+        {method !== 'photo' && !canContinue && <p className="form-hint">{mode === 'concept' ? 'Add a topic or short question for StudySteps.' : 'Add at least a sentence so StudySteps has something to work with.'}</p>}
       </section>
       <div className="integrity-note compact"><HelpCircle /><span>We’ll suggest a starting point—not produce answers to turn in. You’ll review everything before deciding what to keep.</span></div>
     </div>
@@ -803,179 +814,295 @@ function Review({ saveAssignment }: { saveAssignment: (a: Assignment) => void })
   );
 }
 
-type ConceptGuide = {
-  heading: string;
-  explanation: string[];
-  keyIdeas: string[];
-  analogy: string;
-  check: string;
-  checkHint: string;
-};
-
-function buildConceptGuide(input: string): ConceptGuide {
-  const question = input.toLowerCase();
-
-  if (question.includes('photosynth')) {
-    return {
-      heading: 'Plants use light energy to make stored food',
-      explanation: [
-        'Photosynthesis is the process plants use to make sugar, which stores energy they can use to grow and stay alive.',
-        'It happens mainly in leaf cells inside structures called chloroplasts. Chlorophyll in those chloroplasts captures energy from sunlight.',
-        'The plant takes in carbon dioxide from the air and water through its roots. Using light energy, it rearranges those materials into glucose (a sugar) and releases oxygen.',
-        'The important idea is that sunlight supplies the energy, but it does not become matter. The atoms in the sugar come from carbon dioxide and water.',
-      ],
-      keyIdeas: [
-        'Inputs: light energy, carbon dioxide, and water.',
-        'Main product: glucose, which stores chemical energy for the plant.',
-        'Oxygen is released as another product.',
-        'Most photosynthesis happens in chloroplasts, especially in leaves.',
-      ],
-      analogy: 'Think of a leaf as a tiny solar-powered kitchen. Sunlight powers the kitchen, carbon dioxide and water are the ingredients, glucose is the food it prepares, and oxygen is released along the way.',
-      check: 'A plant is placed in bright light but receives no carbon dioxide. Why can it not keep making glucose, even though it still has energy from the light?',
-      checkHint: 'Explain what carbon dioxide contributes to the process—not just that the plant “needs it.”',
-    };
-  }
-
-  if (question.includes('mitosis') || question.includes('cell division')) {
-    return {
-      heading: 'One cell carefully makes two matching cells',
-      explanation: [
-        'Mitosis is the process a body cell uses to divide into two genetically matching cells.',
-        'Before division begins, the cell copies its DNA so there are two complete sets of instructions.',
-        'During mitosis, the copied chromosomes line up and separate to opposite sides. The cell then splits, giving each new cell one copy of every chromosome.',
-        'Your body uses this process for growth, repair, and replacing worn-out cells.',
-      ],
-      keyIdeas: [
-        'DNA is copied before the cell divides.',
-        'Copied chromosomes separate evenly.',
-        'The result is two cells with matching genetic information.',
-        'Mitosis supports growth and tissue repair.',
-      ],
-      analogy: 'Imagine copying a complete instruction manual, checking that every chapter is present, and then placing one full copy into each of two new binders.',
-      check: 'If the DNA were not copied before mitosis, what important problem would the two new cells have?',
-      checkHint: 'Think about the instructions each cell needs in order to function.',
-    };
-  }
-
-  if (question.includes('fraction') || question.includes('denominator')) {
-    return {
-      heading: 'Fractions describe equal parts of a whole',
-      explanation: [
-        'A fraction compares a number of selected parts with the total number of equal parts in one whole.',
-        'The denominator tells how many equal-sized parts the whole is divided into. The numerator tells how many of those parts you have.',
-        'Two fractions can look different but represent the same amount because the whole has simply been divided into more or fewer equal pieces.',
-        'When adding fractions, the pieces must be the same size, which is why different denominators need a common denominator first.',
-      ],
-      keyIdeas: [
-        'The denominator describes the size of each equal part.',
-        'The numerator counts how many parts are being considered.',
-        'Equivalent fractions name the same amount with different-sized pieces.',
-        'Only like-sized fractional parts can be added directly.',
-      ],
-      analogy: 'One half of a pizza is the same amount as two fourths. Cutting each half into two smaller pieces changes the number of pieces, but it does not change how much pizza you have.',
-      check: 'Why would adding 1/2 + 1/3 as 2/5 give the wrong amount?',
-      checkHint: 'Compare the size of a half-piece with the size of a third-piece.',
-    };
-  }
-
-  if (question.includes('gravity') || question.includes('orbit')) {
-    return {
-      heading: 'Gravity is an attraction between objects with mass',
-      explanation: [
-        'Gravity is a force that pulls any two objects with mass toward each other.',
-        'The pull becomes stronger when an object has more mass and weaker when the objects are farther apart.',
-        'Earth’s large mass creates a noticeable pull that gives objects weight and causes unsupported objects to accelerate toward the ground.',
-        'Gravity also keeps the Moon and satellites in orbit: they move forward while continually falling toward Earth, so their path curves around it.',
-      ],
-      keyIdeas: [
-        'All objects with mass exert gravity.',
-        'More mass creates a stronger gravitational pull.',
-        'Greater distance makes the pull weaker.',
-        'An orbit combines forward motion with continuous falling.',
-      ],
-      analogy: 'Imagine rolling a ball forward while the floor curves downward beneath it at the same rate. The ball keeps falling, but it never reaches the floor—similar to an object in orbit.',
-      check: 'Why does the Moon stay near Earth instead of either flying away in a straight line or falling straight down?',
-      checkHint: 'Use both the Moon’s forward motion and Earth’s gravitational pull in your explanation.',
-    };
-  }
-
-  if (question.includes('ecosystem') || question.includes('food chain') || question.includes('food web')) {
-    return {
-      heading: 'An ecosystem connects living things with their environment',
-      explanation: [
-        'An ecosystem includes all the living organisms in an area and the nonliving parts of their environment, such as water, air, soil, and sunlight.',
-        'Organisms depend on one another for energy, shelter, pollination, decomposition, and other needs.',
-        'Energy usually enters through producers like plants, moves to consumers, and eventually reaches decomposers. Unlike matter, which is recycled, usable energy decreases as it moves through the system.',
-        'Because these relationships are connected, a change to one population or resource can affect many other parts of the ecosystem.',
-      ],
-      keyIdeas: [
-        'Biotic factors are living; abiotic factors are nonliving.',
-        'Producers capture energy, consumers eat, and decomposers recycle matter.',
-        'Food webs show several connected feeding relationships.',
-        'Changes can spread through the whole system.',
-      ],
-      analogy: 'An ecosystem is like a neighborhood where homes, stores, roads, electricity, and people all depend on one another. Removing one important service can create effects throughout the neighborhood.',
-      check: 'If a disease greatly reduces the plants in an ecosystem, how could that affect both herbivores and predators?',
-      checkHint: 'Trace how energy moves from producers to different levels of consumers.',
-    };
-  }
-
-  const cleaned = input.trim().replace(/[?.!]$/, '');
-  return {
-    heading: `Build a clear model of “${cleaned.slice(0, 70)}${cleaned.length > 70 ? '…' : ''}”`,
-    explanation: [
-      'Start by identifying what kind of thing the concept is: an object, a process, a relationship, or a rule.',
-      'Next, look for the parts involved and what each part does. Then connect them using cause-and-effect language such as “because,” “therefore,” or “when this changes, that changes.”',
-      'A strong explanation should say not only what happens, but also how or why it happens. Compare that explanation with your class notes and vocabulary so you can replace this general model with the exact details your course expects.',
-    ],
-    keyIdeas: [
-      'Name the concept and its purpose or role.',
-      'Identify the important parts, inputs, or conditions.',
-      'Describe the sequence or cause-and-effect connection.',
-      'Check the explanation against your class materials.',
-    ],
-    analogy: 'Think of understanding a concept like assembling a map: vocabulary gives you the landmarks, cause and effect gives you the roads, and an example shows one complete route through the map.',
-    check: `What is one change to the conditions in “${cleaned.slice(0, 60)}” that would change the result, and why?`,
-    checkHint: 'Use a because statement to show the connection between the change and its effect.',
-  };
-}
-
 function ConceptReview({ draft }: { draft: Draft }) {
   const [, navigate] = useLocation();
-  const topic = draft.text.trim().replace(/[?.!]$/, '');
-  const guide = buildConceptGuide(topic);
+  const { activeId, stop: stopReading } = useSpeech();
+  const topic = draft.text.trim();
+  const requestGeneration = useRef(0);
+  const [guide, setGuide] = useState<ConceptHelpResult | null>(null);
+  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [hintLevel, setHintLevel] = useState(0);
+  const [stepLevel, setStepLevel] = useState(0);
+  const [answerVisible, setAnswerVisible] = useState(false);
+  const [studentAnswer, setStudentAnswer] = useState('');
+  const [checkResult, setCheckResult] = useState<'idle' | 'checking' | 'correct' | 'incorrect' | 'error'>('idle');
+  const [checkFeedback, setCheckFeedback] = useState('');
+  const checkGeneration = useRef(0);
+
+  const loadGuide = useCallback(async () => {
+    const generation = ++requestGeneration.current;
+    setLoadState('loading');
+    try {
+      const result = await createConceptHelp({ studentRequest: topic });
+      if (requestGeneration.current !== generation) return;
+      setGuide(result);
+      setLoadState('ready');
+    } catch {
+      if (requestGeneration.current !== generation) return;
+      setGuide(null);
+      setLoadState('error');
+    }
+  }, [topic]);
+
+  useEffect(() => {
+    void loadGuide();
+    return () => {
+      requestGeneration.current += 1;
+    };
+  }, [loadGuide]);
+
+  const editQuestion = () => {
+    sessionStorage.setItem(CONCEPT_EDIT_KEY, '1');
+    navigate('/help');
+  };
+
+  const handleCheck = async () => {
+    if (activeId === 'concept-practice') stopReading();
+    if (!studentAnswer.trim() || !guide) return;
+    const generation = ++checkGeneration.current;
+    setCheckResult('checking');
+    setCheckFeedback('');
+    try {
+      const result = await checkConceptAnswer({
+        studentRequest: topic,
+        topic: guide.topic,
+        gradeLevel: guide.gradeLevel,
+        practiceProblem: guide.practiceProblem,
+        practiceAnswer: guide.practiceAnswer,
+        practiceAcceptedAnswers: guide.practiceAcceptedAnswers,
+        studentAnswer: studentAnswer.trim(),
+      });
+      if (checkGeneration.current !== generation) return;
+      setCheckFeedback(result.feedback);
+      setCheckResult(result.isCorrect ? 'correct' : 'incorrect');
+    } catch {
+      if (checkGeneration.current !== generation) return;
+      setCheckFeedback('StudySteps couldn’t check that answer right now. Your answer is still here, so you can try again.');
+      setCheckResult('error');
+    }
+  };
+
+  if (loadState === 'loading') {
+    return (
+      <div className="page narrow review-page">
+        <button className="back" onClick={editQuestion}><ArrowLeft /> Edit what I shared</button>
+        <div className="empty-state">
+          <div className="empty-icon"><Sparkles className="pulse" /></div>
+          <h2>Building your lesson...</h2>
+          <p>Analyzing "{topic}" to create a simple explanation and practice problem.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loadState === 'error' || !guide) {
+    return (
+      <div className="page narrow review-page">
+        <button className="back" onClick={editQuestion}><ArrowLeft /> Edit Question</button>
+        <div className="empty-state" style={{ marginTop: '20px' }}>
+          <div className="empty-icon danger-icon" style={{ background: '#fff0ed', color: '#cc4444' }}><HelpCircle /></div>
+          <h2>We couldn't load this lesson</h2>
+          <p style={{ maxWidth: '460px', margin: '0 auto 20px', color: '#6f7b8d' }}>We had trouble building a lesson for "{topic}". Please try again or edit your question.</p>
+          <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+             <button className="secondary" onClick={editQuestion}><Pencil /> Edit Question</button>
+             <button className="primary" onClick={() => void loadGuide()}><RotateCcw /> Retry</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="page narrow review-page">
       <button className="back" onClick={() => navigate('/help')}><ArrowLeft /> Try a different question</button>
-      <div className="review-banner concept"><span><Lightbulb /></span><div><p className="eyebrow">A SIMPLER WAY IN</p><h1>Let’s make this click</h1><p>This is a practice explanation—not an answer to submit.</p></div></div>
+      
+      <div className="review-banner concept">
+        <span><Lightbulb /></span>
+        <div>
+          <p className="eyebrow">{guide.gradeLevel || 'STUDY HELP'} · {guide.subject}</p>
+          <h1>{guide.heading}</h1>
+          <p>Focused on: {guide.topic || topic}</p>
+        </div>
+      </div>
+
       <section className="concept-card">
         <div className="review-title" style={{ marginBottom: '10px' }}>
           <div><span className="concept-label">SIMPLE EXPLANATION</span><h2>{guide.heading}</h2></div>
-          <ReadAloud id="concept-explanation" text={`Simple explanation: ${guide.heading}. Your question: ${topic}. ${guide.explanation.join(' ')}`} />
+          <ReadAloud id="concept-explanation" text={`Simple explanation: ${guide.heading}. ${guide.explanation.join(' ')}. Key ideas: ${guide.keyIdeas.join('. ')}`} />
         </div>
-        <p><strong>Your question:</strong> {topic}</p>
         {guide.explanation.map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+        
+        {guide.keyIdeas && guide.keyIdeas.length > 0 && (
+          <div style={{ marginTop: '20px' }}>
+            <span className="concept-label" style={{ display: 'block', marginBottom: '10px' }}>KEY IDEAS</span>
+            <ul className="key-list">
+              {guide.keyIdeas.map(idea => <li key={idea}><Check /> {idea}</li>)}
+            </ul>
+          </div>
+        )}
       </section>
-      <section className="concept-card">
+
+      <section className="concept-card worked-example">
         <div className="review-title" style={{ marginBottom: '10px' }}>
-          <span className="concept-label">KEY IDEAS</span>
-          <ReadAloud id="concept-key-ideas" text={`Key ideas: ${guide.keyIdeas.join('. ')}`} />
+          <span className="concept-label">WORKED EXAMPLE</span>
+          <ReadAloud id="concept-example" text={`Worked example. ${guide.exampleProblem}. Steps: ${guide.exampleSteps.join('. ')}. Answer: ${guide.exampleAnswer}`} />
         </div>
-        <ul className="key-list">{guide.keyIdeas.map(idea => <li key={idea}><Check /> {idea}</li>)}</ul>
+        <h2>{guide.exampleProblem}</h2>
+        <ol>
+          {guide.exampleSteps.map((step, index) => (
+            <li key={index}><span>{index + 1}</span>{step}</li>
+          ))}
+        </ol>
+        <p className="example-answer"><strong>Answer:</strong> {guide.exampleAnswer}</p>
       </section>
-      <section className="concept-card analogy">
+
+      <section className="concept-card" id="practice">
         <div className="review-title" style={{ marginBottom: '10px' }}>
-          <span className="concept-label">CONCRETE ANALOGY</span>
-          <ReadAloud id="concept-analogy" text={`Concrete analogy: ${guide.analogy}`} />
+          <span className="concept-label">PRACTICE</span>
+          <ReadAloud 
+            id="concept-practice" 
+            text={[
+              `Practice problem. ${guide.guidedTry}. ${guide.practiceProblem}`,
+              hintLevel > 0 ? `Hints: ${guide.practiceHints.slice(0, hintLevel).join('. ')}` : '',
+              stepLevel > 0 ? `Solution steps: ${guide.practiceSteps.slice(0, stepLevel).join('. ')}` : '',
+              answerVisible ? `Final answer: ${guide.practiceAnswer}` : ''
+            ].filter(Boolean).join('. ')} 
+          />
         </div>
-        <p>{guide.analogy}</p>
+        
+        <div className="guided-try" style={{ marginBottom: '15px' }}>
+          <strong>Guided Try</strong>
+          <p style={{ margin: '4px 0 0' }}>{guide.guidedTry}</p>
+        </div>
+        
+        <h2>{guide.practiceProblem}</h2>
+
+        <div style={{ margin: '20px 0', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <input 
+            type="text" 
+            placeholder="Your answer..." 
+            value={studentAnswer}
+            onChange={(e) => {
+              checkGeneration.current += 1;
+              setStudentAnswer(e.target.value);
+              if (checkResult !== 'idle') setCheckResult('idle');
+              setCheckFeedback('');
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void handleCheck();
+            }}
+            style={{ maxWidth: '300px' }}
+          />
+          <button className="primary" onClick={() => void handleCheck()} style={{ minHeight: '46px' }} disabled={!studentAnswer.trim() || checkResult === 'checking'}>{checkResult === 'checking' ? 'Checking…' : 'Check My Answer'}</button>
+        </div>
+
+        {checkResult === 'correct' && (
+          <div className="celebration" style={{ marginBottom: '15px' }}>
+            <CheckCircle2 /> <div><strong>Great job!</strong> {checkFeedback}</div>
+          </div>
+        )}
+        {checkResult === 'incorrect' && (
+          <div className="photo-input-error" style={{ marginBottom: '15px' }}>
+             <HelpCircle /> <div>{checkFeedback}</div>
+          </div>
+        )}
+        {checkResult === 'error' && (
+          <div className="photo-input-error" style={{ marginBottom: '15px' }} role="alert">
+            <HelpCircle /> <div>{checkFeedback}</div>
+          </div>
+        )}
+
+        {hintLevel > 0 && (
+          <div className="progressive-hints">
+            <strong style={{ display: 'block', marginBottom: '8px' }}>Hints</strong>
+            <ul style={{ margin: 0, paddingLeft: '20px' }}>
+              {guide.practiceHints.slice(0, hintLevel).map((hint, index) => <li key={index} style={{ marginBottom: '6px' }}>{hint}</li>)}
+            </ul>
+          </div>
+        )}
+
+        {stepLevel > 0 && (
+          <div className="answer-reveal">
+            <strong style={{ display: 'block', marginBottom: '8px' }}>Solution Steps</strong>
+            <ol style={{ margin: 0, paddingLeft: '20px' }}>
+              {guide.practiceSteps.slice(0, stepLevel).map((step, index) => <li key={index} style={{ marginBottom: '6px' }}>{step}</li>)}
+            </ol>
+          </div>
+        )}
+
+        {answerVisible && (
+          <div className="problem-answer" style={{ marginTop: '15px' }}>
+            <strong>Final answer:</strong> {guide.practiceAnswer}
+          </div>
+        )}
+
+        <div className="problem-actions" style={{ marginTop: '20px' }}>
+          <button 
+            className="secondary" 
+            disabled={hintLevel >= guide.practiceHints.length || answerVisible}
+            onClick={() => {
+              if (activeId === 'concept-practice') stopReading();
+              setHintLevel(v => Math.min(v + 1, guide.practiceHints.length));
+            }}
+          >
+            <HelpCircle /> Give me a hint
+          </button>
+          
+          <button 
+            className="secondary"
+            disabled={stepLevel >= guide.practiceSteps.length || answerVisible}
+            onClick={() => {
+              if (activeId === 'concept-practice') stopReading();
+              setStepLevel(v => Math.min(v + 1, guide.practiceSteps.length));
+            }}
+          >
+            <Sparkles /> Solve one with me
+          </button>
+
+          <button 
+            className="secondary"
+            onClick={() => {
+              if (activeId === 'concept-practice') stopReading();
+              if (!answerVisible) {
+                setAnswerVisible(true);
+                setHintLevel(guide.practiceHints.length);
+                setStepLevel(guide.practiceSteps.length);
+              } else {
+                setAnswerVisible(false);
+                setHintLevel(0);
+                setStepLevel(0);
+              }
+            }}
+          >
+            {answerVisible ? 'Hide Answer' : 'Show Answer'}
+          </button>
+        </div>
       </section>
-      <section className="check-question"><HelpCircle /><div style={{ width: '100%' }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}><span>QUICK UNDERSTANDING CHECK</span><ReadAloud id="concept-check" text={`Quick understanding check. ${guide.check}. Hint: ${guide.checkHint}`} /></div><h2>{guide.check}</h2><textarea rows={3} aria-label="Your understanding-check answer" placeholder={guide.checkHint} /></div></section>
-      <div className="concept-actions"><button className="secondary" onClick={() => navigate('/help')}>Ask another question</button><button className="primary" onClick={() => navigate('/')}>Done for now</button></div>
-      <div className="integrity-note compact"><Lightbulb /><span>Use this explanation to build your understanding. Write your final schoolwork in your own words and follow your teacher’s rules.</span></div>
+
+      <section className="check-question">
+        <HelpCircle />
+        <div style={{ width: '100%' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span>QUICK UNDERSTANDING CHECK</span>
+            <ReadAloud id="concept-check" text={`Quick understanding check. ${guide.understandingCheck}`} />
+          </div>
+          <h2>{guide.understandingCheck}</h2>
+          <textarea rows={3} aria-label="Your understanding-check answer" placeholder="Explain in your own words..." />
+        </div>
+      </section>
+
+      <div className="concept-actions">
+        <button className="secondary" onClick={() => navigate('/help')}>Ask another question</button>
+        <button className="primary" onClick={() => navigate('/')}>Done for now</button>
+      </div>
+      <div className="integrity-note compact">
+        <Lightbulb />
+        <span>Use this explanation to build your understanding. Write your final schoolwork in your own words and follow your teacher’s rules.</span>
+      </div>
     </div>
   );
 }
+
 
 function PhotoHelpReview() {
   const [, navigate] = useLocation();
@@ -1393,6 +1520,7 @@ function AppRouter() {
   </Switch></RoutedErrorBoundary></Shell>;
 }
 function RoutedErrorBoundary({ children }: { children: ReactNode }) { const [location] = useLocation(); return <ErrorBoundary resetKey={location}>{children}</ErrorBoundary>; }
+
 export default function App() {
   return <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><SpeechProvider><AppRouter /></SpeechProvider></WouterRouter>;
 }

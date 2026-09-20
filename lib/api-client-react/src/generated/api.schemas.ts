@@ -143,3 +143,61 @@ export interface ProjectPlanResult {
   planSteps: string[];
 }
 
+export interface ConceptHelpInput {
+  /**
+     * @minLength 3
+     * @maxLength 2000
+     */
+  studentRequest: string;
+}
+
+export interface ConceptHelpResult {
+  topic: string;
+  gradeLevel: string;
+  subject: string;
+  studentGoal: string;
+  heading: string;
+  /** @minItems 1 */
+  explanation: string[];
+  /** @minItems 2 */
+  keyIdeas: string[];
+  exampleProblem: string;
+  /** @minItems 2 */
+  exampleSteps: string[];
+  exampleAnswer: string;
+  guidedTry: string;
+  practiceProblem: string;
+  /** @minItems 2 */
+  practiceHints: string[];
+  /** @minItems 2 */
+  practiceSteps: string[];
+  practiceAnswer: string;
+  /** @minItems 1 */
+  practiceAcceptedAnswers: string[];
+  understandingCheck: string;
+}
+
+export interface ConceptAnswerCheckInput {
+  /**
+     * @minLength 3
+     * @maxLength 2000
+     */
+  studentRequest: string;
+  topic: string;
+  gradeLevel: string;
+  practiceProblem: string;
+  practiceAnswer: string;
+  /** @minItems 1 */
+  practiceAcceptedAnswers: string[];
+  /**
+     * @minLength 1
+     * @maxLength 1000
+     */
+  studentAnswer: string;
+}
+
+export interface ConceptAnswerCheckResult {
+  isCorrect: boolean;
+  feedback: string;
+}
+

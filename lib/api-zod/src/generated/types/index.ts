@@ -6,6 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './conceptAnswerCheckInput';
+export * from './conceptAnswerCheckResult';
+export * from './conceptHelpInput';
+export * from './conceptHelpResult';
 export * from './healthStatus';
 export * from './photoAnalysisInput';
 export * from './photoAnalysisInputSelectedMode';

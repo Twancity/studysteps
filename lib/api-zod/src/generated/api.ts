@@ -132,3 +132,75 @@ export const CreateProjectPlanResponse = zod.object({
 })
 
 
+/**
+ * @summary Generate an adaptive concept lesson from a student request
+ */
+export const createConceptHelpBodyStudentRequestMin = 3;
+export const createConceptHelpBodyStudentRequestMax = 2000;
+
+
+
+export const CreateConceptHelpBody = zod.object({
+  "studentRequest": zod.string().min(createConceptHelpBodyStudentRequestMin).max(createConceptHelpBodyStudentRequestMax)
+})
+
+
+export const createConceptHelpResponseKeyIdeasMin = 2;
+
+export const createConceptHelpResponseExampleStepsMin = 2;
+
+export const createConceptHelpResponsePracticeHintsMin = 2;
+
+export const createConceptHelpResponsePracticeStepsMin = 2;
+
+
+
+
+export const CreateConceptHelpResponse = zod.object({
+  "topic": zod.string(),
+  "gradeLevel": zod.string(),
+  "subject": zod.string(),
+  "studentGoal": zod.string(),
+  "heading": zod.string(),
+  "explanation": zod.array(zod.string()).min(1),
+  "keyIdeas": zod.array(zod.string()).min(createConceptHelpResponseKeyIdeasMin),
+  "exampleProblem": zod.string(),
+  "exampleSteps": zod.array(zod.string()).min(createConceptHelpResponseExampleStepsMin),
+  "exampleAnswer": zod.string(),
+  "guidedTry": zod.string(),
+  "practiceProblem": zod.string(),
+  "practiceHints": zod.array(zod.string()).min(createConceptHelpResponsePracticeHintsMin),
+  "practiceSteps": zod.array(zod.string()).min(createConceptHelpResponsePracticeStepsMin),
+  "practiceAnswer": zod.string(),
+  "practiceAcceptedAnswers": zod.array(zod.string()).min(1),
+  "understandingCheck": zod.string()
+})
+
+
+/**
+ * @summary Check a student's concept-practice answer without revealing the solution
+ */
+export const checkConceptAnswerBodyStudentRequestMin = 3;
+export const checkConceptAnswerBodyStudentRequestMax = 2000;
+
+
+export const checkConceptAnswerBodyStudentAnswerMax = 1000;
+
+
+
+export const CheckConceptAnswerBody = zod.object({
+  "studentRequest": zod.string().min(checkConceptAnswerBodyStudentRequestMin).max(checkConceptAnswerBodyStudentRequestMax),
+  "topic": zod.string(),
+  "gradeLevel": zod.string(),
+  "practiceProblem": zod.string(),
+  "practiceAnswer": zod.string(),
+  "practiceAcceptedAnswers": zod.array(zod.string()).min(1),
+  "studentAnswer": zod.string().min(1).max(checkConceptAnswerBodyStudentAnswerMax)
+})
+
+export const CheckConceptAnswerResponse = zod.object({
+  "isCorrect": zod.boolean(),
+  "feedback": zod.string()
+})
+
+

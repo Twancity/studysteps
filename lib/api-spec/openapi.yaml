@@ -12,6 +12,8 @@ tags:
     description: Health operations
   - name: photo-help
     description: Temporary multimodal schoolwork analysis and teaching help
+  - name: concept-help
+    description: Adaptive teaching help for typed and spoken student questions
 paths:
   /healthz:
     get:
@@ -90,6 +92,50 @@ paths:
                 $ref: "#/components/schemas/ProjectPlanResult"
         "400":
           description: Invalid project direction
+        "502":
+          description: AI provider failed
+  /concept-help:
+    post:
+      operationId: createConceptHelp
+      tags: [concept-help]
+      summary: Generate an adaptive concept lesson from a student request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConceptHelpInput"
+      responses:
+        "200":
+          description: Parsed intent and grade-appropriate teaching sequence
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConceptHelpResult"
+        "400":
+          description: Invalid or too-short request
+        "502":
+          description: AI provider failed
+  /concept-answer-check:
+    post:
+      operationId: checkConceptAnswer
+      tags: [concept-help]
+      summary: Check a student's concept-practice answer without revealing the solution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConceptAnswerCheckInput"
+      responses:
+        "200":
+          description: Semantic correctness and student-safe feedback
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConceptAnswerCheckResult"
+        "400":
+          description: Invalid answer-check request
         "502":
           description: AI provider failed
 components:
@@ -277,4 +323,101 @@ components:
           items:
             type: string
       required: [summary, planSteps]
+    ConceptHelpInput:
+      type: object
+      properties:
+        studentRequest:
+          type: string
+          minLength: 3
+          maxLength: 2000
+      required: [studentRequest]
+    ConceptHelpResult:
+      type: object
+      properties:
+        topic:
+          type: string
+        gradeLevel:
+          type: string
+        subject:
+          type: string
+        studentGoal:
+          type: string
+        heading:
+          type: string
+        explanation:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        keyIdeas:
+          type: array
+          minItems: 2
+          items:
+            type: string
+        exampleProblem:
+          type: string
+        exampleSteps:
+          type: array
+          minItems: 2
+          items:
+            type: string
+        exampleAnswer:
+          type: string
+        guidedTry:
+          type: string
+        practiceProblem:
+          type: string
+        practiceHints:
+          type: array
+          minItems: 2
+          items:
+            type: string
+        practiceSteps:
+          type: array
+          minItems: 2
+          items:
+            type: string
+        practiceAnswer:
+          type: string
+        practiceAcceptedAnswers:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        understandingCheck:
+          type: string
+      required: [topic, gradeLevel, subject, studentGoal, heading, explanation, keyIdeas, exampleProblem, exampleSteps, exampleAnswer, guidedTry, practiceProblem, practiceHints, practiceSteps, practiceAnswer, practiceAcceptedAnswers, understandingCheck]
+    ConceptAnswerCheckInput:
+      type: object
+      properties:
+        studentRequest:
+          type: string
+          minLength: 3
+          maxLength: 2000
+        topic:
+          type: string
+        gradeLevel:
+          type: string
+        practiceProblem:
+          type: string
+        practiceAnswer:
+          type: string
+        practiceAcceptedAnswers:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        studentAnswer:
+          type: string
+          minLength: 1
+          maxLength: 1000
+      required: [studentRequest, topic, gradeLevel, practiceProblem, practiceAnswer, practiceAcceptedAnswers, studentAnswer]
+    ConceptAnswerCheckResult:
+      type: object
+      properties:
+        isCorrect:
+          type: boolean
+        feedback:
+          type: string
+      required: [isCorrect, feedback]
 

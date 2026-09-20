@@ -20,6 +20,10 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  ConceptAnswerCheckInput,
+  ConceptAnswerCheckResult,
+  ConceptHelpInput,
+  ConceptHelpResult,
   HealthStatus,
   PhotoAnalysisInput,
   PhotoExtraction,
@@ -396,5 +400,181 @@ export const useCreateProjectPlan = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getCreateProjectPlanMutationOptions(options));
+    }
+
+export const getCreateConceptHelpUrl = () => {
+
+
+
+
+  return `/api/concept-help`
+}
+
+/**
+ * @summary Generate an adaptive concept lesson from a student request
+ */
+export const createConceptHelp = async (conceptHelpInput: ConceptHelpInput, options?: Parameters<typeof customFetch>[1]): Promise<ConceptHelpResult> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ConceptHelpResult>(getCreateConceptHelpUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(conceptHelpInput)
+  }
+);}
+
+
+
+
+
+export const getCreateConceptHelpMutationKey = () => ['createConceptHelp'] as const;
+
+export const getCreateConceptHelpMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createConceptHelp>>, TError,CreateConceptHelpMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createConceptHelp>>, TError,CreateConceptHelpMutationVariables, TContext> => {
+
+const mutationKey = getCreateConceptHelpMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createConceptHelp>>, CreateConceptHelpMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createConceptHelp(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateConceptHelpMutationResult = NonNullable<Awaited<ReturnType<typeof createConceptHelp>>>
+    export type CreateConceptHelpMutationBody = BodyType<ConceptHelpInput>
+    export type CreateConceptHelpMutationError = ErrorType<void>
+    export type CreateConceptHelpMutationVariables = {data: BodyType<ConceptHelpInput>}
+
+    /**
+ * @summary Generate an adaptive concept lesson from a student request
+ */
+export const useCreateConceptHelp = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createConceptHelp>>, TError,CreateConceptHelpMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createConceptHelp>>,
+        TError,
+        CreateConceptHelpMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateConceptHelpMutationOptions(options));
+    }
+
+export const getCheckConceptAnswerUrl = () => {
+
+
+
+
+  return `/api/concept-answer-check`
+}
+
+/**
+ * @summary Check a student's concept-practice answer without revealing the solution
+ */
+export const checkConceptAnswer = async (conceptAnswerCheckInput: ConceptAnswerCheckInput, options?: Parameters<typeof customFetch>[1]): Promise<ConceptAnswerCheckResult> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ConceptAnswerCheckResult>(getCheckConceptAnswerUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(conceptAnswerCheckInput)
+  }
+);}
+
+
+
+
+
+export const getCheckConceptAnswerMutationKey = () => ['checkConceptAnswer'] as const;
+
+export const getCheckConceptAnswerMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof checkConceptAnswer>>, TError,CheckConceptAnswerMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof checkConceptAnswer>>, TError,CheckConceptAnswerMutationVariables, TContext> => {
+
+const mutationKey = getCheckConceptAnswerMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof checkConceptAnswer>>, CheckConceptAnswerMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  checkConceptAnswer(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CheckConceptAnswerMutationResult = NonNullable<Awaited<ReturnType<typeof checkConceptAnswer>>>
+    export type CheckConceptAnswerMutationBody = BodyType<ConceptAnswerCheckInput>
+    export type CheckConceptAnswerMutationError = ErrorType<void>
+    export type CheckConceptAnswerMutationVariables = {data: BodyType<ConceptAnswerCheckInput>}
+
+    /**
+ * @summary Check a student's concept-practice answer without revealing the solution
+ */
+export const useCheckConceptAnswer = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof checkConceptAnswer>>, TError,CheckConceptAnswerMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof checkConceptAnswer>>,
+        TError,
+        CheckConceptAnswerMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCheckConceptAnswerMutationOptions(options));
     }
 
