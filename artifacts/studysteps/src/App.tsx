@@ -1,15 +1,125 @@
-import { type ChangeEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type ChangeEvent, type DragEvent, type ReactNode, useEffect, useMemo, useRef, useState, useCallback, createContext, useContext } from 'react';
 import { analyzePhoto, createPhotoHelp, createProjectPlan } from '@workspace/api-client-react';
 import type { PhotoExtraction, PhotoHelpResult } from '@workspace/api-client-react';
 import {
   ArrowLeft, ArrowRight, BookOpen, CalendarDays, Camera, Check, CheckCircle2,
   ChevronDown, ChevronUp, Circle, Clock3, GripVertical, HelpCircle, Home,
   Lightbulb, ListChecks, Mic, Pencil, Plus, Sparkles, Trash2, Upload, X,
+  Play, Pause, Square, RotateCcw, Volume2
 } from 'lucide-react';
 import { Route, Switch, useLocation, useRoute, Router as WouterRouter } from 'wouter';
 import { ErrorBoundary } from '@/components/error-boundary';
 import NotFound from '@/pages/not-found';
 import './index.css';
+
+type SpeechContextType = {
+  activeId: string | null;
+  status: 'idle' | 'playing' | 'paused';
+  play: (id: string, text: string) => void;
+  pause: () => void;
+  resume: () => void;
+  stop: () => void;
+};
+const SpeechContext = createContext<SpeechContextType | null>(null);
+
+function useSpeech() {
+  const context = useContext(SpeechContext);
+  if (!context) throw new Error('useSpeech must be used within a SpeechProvider');
+  return context;
+}
+
+function SpeechProvider({ children }: { children: ReactNode }) {
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [status, setStatus] = useState<'idle' | 'playing' | 'paused'>('idle');
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+
+  useEffect(() => {
+    return () => {
+      window.speechSynthesis?.cancel();
+    };
+  }, []);
+
+  const play = useCallback((id: string, text: string) => {
+    if (!window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utteranceRef.current = utterance;
+    setActiveId(id);
+    setStatus('playing');
+    
+    utterance.onstart = () => {
+      if (utteranceRef.current === utterance) {
+        setActiveId(id);
+        setStatus('playing');
+      }
+    };
+    utterance.onend = () => {
+      if (utteranceRef.current === utterance) {
+        utteranceRef.current = null;
+        setActiveId(null);
+        setStatus('idle');
+      }
+    };
+    utterance.onpause = () => {
+      if (utteranceRef.current === utterance) setStatus('paused');
+    };
+    utterance.onresume = () => {
+      if (utteranceRef.current === utterance) setStatus('playing');
+    };
+    utterance.onerror = () => {
+      if (utteranceRef.current === utterance) {
+        utteranceRef.current = null;
+        setActiveId(null);
+        setStatus('idle');
+      }
+    };
+    
+    window.speechSynthesis.speak(utterance);
+  }, []);
+
+  const pause = useCallback(() => window.speechSynthesis?.pause(), []);
+  const resume = useCallback(() => window.speechSynthesis?.resume(), []);
+  const stop = useCallback(() => {
+    window.speechSynthesis?.cancel();
+    utteranceRef.current = null;
+    setActiveId(null);
+    setStatus('idle');
+  }, []);
+
+  return (
+    <SpeechContext.Provider value={{ activeId, status, play, pause, resume, stop }}>
+      {children}
+    </SpeechContext.Provider>
+  );
+}
+
+function ReadAloud({ id, text, label = "Read to me" }: { id: string; text: string; label?: string }) {
+  const { activeId, status, play, pause, resume, stop } = useSpeech();
+  const isActive = activeId === id;
+  const isSupported = typeof window !== 'undefined' && 'speechSynthesis' in window;
+
+  if (!isSupported) return <span className="read-unavailable" role="status">Read to Me isn’t available on this device.</span>;
+
+  if (isActive) {
+    return (
+      <div className="read-aloud-controls" data-testid={`read-aloud-active-${id}`} aria-live="polite">
+        {status === 'playing' ? (
+          <button onClick={pause} aria-label="Pause reading" data-testid={`pause-${id}`}><Pause size={14} /> Pause</button>
+        ) : (
+          <button onClick={resume} aria-label="Resume reading" data-testid={`resume-${id}`}><Play size={14} /> Resume</button>
+        )}
+        <button onClick={() => play(id, text)} aria-label="Replay" data-testid={`replay-${id}`}><RotateCcw size={14} /> Replay</button>
+        <button onClick={stop} aria-label="Stop reading" data-testid={`stop-${id}`}><Square size={14} /> Stop</button>
+      </div>
+    );
+  }
+
+  return (
+    <button className="read-aloud-btn" onClick={() => play(id, text)} aria-label={`Read ${label}`} data-testid={`play-${id}`}>
+      <Volume2 size={15} /> {label}
+    </button>
+  );
+}
 
 type Step = { id: string; text: string; complete: boolean };
 type AssignmentStatus = 'Not Started' | 'Working On It' | 'Ready to Turn In' | 'Turned In';
@@ -217,6 +327,12 @@ const dueLabel = (date: string) => {
 
 function Shell({ children }: { children: ReactNode }) {
   const [location, navigate] = useLocation();
+  const { stop } = useSpeech();
+  
+  useEffect(() => {
+    stop();
+  }, [location, stop]);
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -299,12 +415,28 @@ function GetHelp() {
   const [extraction, setExtraction] = useState<PhotoExtraction | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [generatingHelp, setGeneratingHelp] = useState(false);
-  const [voiceStatus, setVoiceStatus] = useState('');
+  const [voiceState, setVoiceState] = useState<'idle' | 'listening' | 'error' | 'unsupported'>('idle');
+  const [voiceErrorText, setVoiceErrorText] = useState('');
   const recognition = useRef<any>(null);
+  const recognitionSession = useRef(0);
+  const previousMode = useRef(mode);
+  const photoGeneration = useRef(0);
+  const analysisGeneration = useRef(0);
 
-  const handlePhoto = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const [isDragging, setIsDragging] = useState(false);
+  const onDragOver = (e: DragEvent) => { e.preventDefault(); setIsDragging(true); };
+  const onDragLeave = (e: DragEvent) => { e.preventDefault(); setIsDragging(false); };
+  const onDrop = (e: DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) handlePhotoFile(file);
+  };
+
+  const handlePhotoFile = (file: File) => {
+    const generation = ++photoGeneration.current;
+    analysisGeneration.current += 1;
+    setAnalyzing(false);
     setPhotoError('');
     setExtraction(null);
     const extension = file.name.split('.').pop()?.toLowerCase();
@@ -312,26 +444,38 @@ function GetHelp() {
     const supportedExtension = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'].includes(extension ?? '');
     if (!supportedType && !supportedExtension) {
       setPhotoError('That file type is not supported. Choose a JPEG, PNG, WebP, HEIC, or HEIF image.');
-      e.target.value = '';
       return;
     }
     const reader = new FileReader();
-    reader.onerror = () => setPhotoError('We couldn’t open that image. Try another photo or type the directions below.');
-    reader.onload = () => setPhoto(String(reader.result));
+    reader.onerror = () => {
+      if (photoGeneration.current === generation) setPhotoError('We couldn’t open that image. Try another photo or type the directions below.');
+    };
+    reader.onload = () => {
+      if (photoGeneration.current === generation) setPhoto(String(reader.result));
+    };
     reader.readAsDataURL(file);
+  };
+
+  const handlePhoto = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handlePhotoFile(file);
+    e.target.value = '';
   };
   const analyzeSelectedPhoto = async () => {
     if (!photo) return;
+    const requestGeneration = ++analysisGeneration.current;
+    const photoAtRequest = photo;
     setAnalyzing(true);
     setPhotoError('');
     try {
-      const result = await analyzePhoto({ imageDataUrl: photo, studentRequest: text.trim(), selectedMode: mode });
+      const result = await analyzePhoto({ imageDataUrl: photoAtRequest, studentRequest: text.trim(), selectedMode: mode });
+      if (analysisGeneration.current !== requestGeneration || photoGeneration.current < 1) return;
       setExtraction(result);
       if (!result.readable) setPhotoError(result.note || 'Some of this photo may be hard to read. Correct the text below or try a clearer photo.');
     } catch {
-      setPhotoError('We couldn’t understand that photo right now. Try a JPEG, PNG, or WebP image, retake it more clearly, or type the schoolwork below.');
+      if (analysisGeneration.current === requestGeneration) setPhotoError('We couldn’t understand that photo right now. Try a JPEG, PNG, or WebP image, retake it more clearly, or type the schoolwork below.');
     } finally {
-      setAnalyzing(false);
+      if (analysisGeneration.current === requestGeneration) setAnalyzing(false);
     }
   };
   const approveExtraction = async () => {
@@ -353,14 +497,78 @@ function GetHelp() {
       setGeneratingHelp(false);
     }
   };
+  const stopVoice = () => {
+    recognitionSession.current += 1;
+    const activeRecognition = recognition.current;
+    recognition.current = null;
+    activeRecognition?.abort();
+    setVoiceState('idle');
+  };
+
+  useEffect(() => {
+    if (method !== 'voice' && recognition.current) stopVoice();
+  }, [method]);
+  useEffect(() => {
+    if (previousMode.current !== mode && recognition.current) stopVoice();
+    previousMode.current = mode;
+  }, [mode]);
+  useEffect(() => () => {
+    recognitionSession.current += 1;
+    recognition.current?.abort();
+    recognition.current = null;
+  }, []);
+
   const startVoice = () => {
+    if (recognition.current) return;
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) { setVoiceStatus('Voice typing isn’t supported in this browser. You can type or paste your schoolwork instead.'); return; }
-    const r = new SpeechRecognition(); recognition.current = r; r.continuous = false; r.interimResults = false;
-    r.onstart = () => setVoiceStatus('Listening… Say what you need help with.');
-    r.onresult = (e: any) => { setText((v) => `${v}${v ? ' ' : ''}${e.results[0][0].transcript}`); setVoiceStatus('Got it! You can edit what we heard below.'); };
-    r.onerror = () => setVoiceStatus('We couldn’t hear that clearly. Try again, or type your schoolwork below.');
-    r.onend = () => recognition.current = null; r.start();
+    if (!SpeechRecognition) { 
+      setVoiceState('unsupported'); 
+      setVoiceErrorText('Voice typing isn’t supported in this browser. You can type or paste your schoolwork instead.'); 
+      return; 
+    }
+    try {
+      const session = ++recognitionSession.current;
+      const r = new SpeechRecognition();
+      recognition.current = r; 
+      r.continuous = true; 
+      r.interimResults = true;
+      setVoiceState('listening');
+      setVoiceErrorText('');
+      r.onstart = () => {
+        if (recognitionSession.current === session && recognition.current === r) setVoiceState('listening');
+      };
+      r.onresult = (e: any) => { 
+        if (recognitionSession.current !== session || recognition.current !== r) return;
+        let finalTranscript = '';
+        for (let i = e.resultIndex; i < e.results.length; ++i) {
+          if (e.results[i].isFinal) {
+            finalTranscript += e.results[i][0].transcript;
+          }
+        }
+        if (finalTranscript) {
+          setText(prev => {
+            const current = prev.trim();
+            return current ? `${current} ${finalTranscript.trim()}` : finalTranscript.trim();
+          });
+        }
+      };
+      r.onerror = (e: any) => { 
+        if (recognitionSession.current !== session || recognition.current !== r) return;
+        setVoiceState('error');
+        setVoiceErrorText(e.error === 'not-allowed' ? 'Microphone access denied. Please allow microphone access or type your schoolwork below.' : 'We couldn’t hear that clearly. Try again, or type your schoolwork below.');
+      };
+      r.onend = () => { 
+        if (recognitionSession.current !== session || recognition.current !== r) return;
+        setVoiceState(prev => prev === 'listening' ? 'idle' : prev);
+        recognition.current = null;
+      }; 
+      r.start();
+    } catch (err) {
+      recognitionSession.current += 1;
+      recognition.current = null;
+      setVoiceState('error');
+      setVoiceErrorText('We couldn’t start the microphone. Try typing your schoolwork instead.');
+    }
   };
   const continueToReview = () => {
     const derived = deriveDeliverablesAndMethod(text);
@@ -379,22 +587,34 @@ function GetHelp() {
       <section className="form-card">
         <h2>{mode === 'assignment' ? 'Share your assignment' : 'What feels confusing?'}</h2>
         <div className="method-tabs" role="tablist" aria-label="Input method">
-          <button className={method === 'text' ? 'active' : ''} onClick={() => setMethod('text')}><Pencil /> Type or paste</button>
-          <button className={method === 'photo' ? 'active' : ''} onClick={() => setMethod('photo')}><Camera /> Photo</button>
-          <button className={method === 'voice' ? 'active' : ''} onClick={() => setMethod('voice')}><Mic /> Voice</button>
+          <button role="tab" aria-selected={method === 'text'} className={method === 'text' ? 'active' : ''} onClick={() => setMethod('text')}><Pencil /> Type or paste</button>
+          <button role="tab" aria-selected={method === 'photo'} className={method === 'photo' ? 'active' : ''} onClick={() => setMethod('photo')}><Camera /> Photo</button>
+          <button role="tab" aria-selected={method === 'voice'} className={method === 'voice' ? 'active' : ''} onClick={() => setMethod('voice')}><Mic /> Tell StudySteps</button>
         </div>
         {method === 'photo' && <div className="input-panel">
-          {photo ? <div className="photo-preview"><img src={photo} alt="Selected schoolwork preview" onError={() => { setPhoto(null); setPhotoError('This device can’t preview that image format. Try a JPEG or PNG instead.'); }} /><button onClick={() => { setPhoto(null); setExtraction(null); setPhotoError(''); }} aria-label="Remove photo"><X /></button></div> :
-            <div className="photo-source-panel">
-              <div className="photo-source-heading"><Camera /><div><strong>Add a photo of your schoolwork</strong><span>Use a clear, well-lit picture of the whole page.</span></div></div>
+          {photo ? <div className="photo-preview" onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
+            <img src={photo} alt="Selected schoolwork preview" onError={() => { setPhoto(null); setPhotoError('This device can’t preview that image format. Try a JPEG or PNG instead.'); }} />
+            <div className="photo-preview-actions">
+              <label className="replace-photo"><Upload /><span>Replace photo</span><input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif" onChange={handlePhoto} data-testid="input-replace-photo" /></label>
+              <button onClick={() => { photoGeneration.current += 1; analysisGeneration.current += 1; setAnalyzing(false); setPhoto(null); setExtraction(null); setPhotoError(''); }} aria-label="Remove photo" data-testid="button-remove-photo"><X /><span>Remove</span></button>
+            </div>
+          </div> :
+            <div 
+              className={`photo-source-panel ${isDragging ? 'dragging' : ''}`}
+              onDragOver={onDragOver}
+              onDragLeave={onDragLeave}
+              onDrop={onDrop}
+              data-testid="photo-dropzone"
+            >
+              <div className="photo-source-heading"><Camera /><div><strong>Add a photo of your schoolwork</strong><span>Use a clear, well-lit picture of the whole page. <span className="drop-copy">Or drag and drop it here.</span></span></div></div>
               <div className="photo-source-actions">
-                <label className="photo-source-button camera-choice"><Camera /><span><strong>Take photo</strong><small>Open your camera</small></span><input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif" capture="environment" onChange={handlePhoto} /></label>
-                <label className="photo-source-button"><Upload /><span><strong>Choose photo</strong><small>Browse your device</small></span><input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif" onChange={handlePhoto} /></label>
+                <label className="photo-source-button camera-choice"><Camera /><span><strong>Take photo</strong><small>Open your camera</small></span><input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif" capture="environment" onChange={handlePhoto} data-testid="input-take-photo" /></label>
+                <label className="photo-source-button"><Upload /><span><strong>Choose photo</strong><small>Browse your device</small></span><input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif" onChange={handlePhoto} data-testid="input-choose-photo" /></label>
               </div>
             </div>}
           {photoError && <div className="photo-input-error" role="alert"><HelpCircle /><span>{photoError}</span></div>}
           {!extraction && <div className="photo-ready-note"><Sparkles /><span><strong>Your photo will guide the help.</strong> We’ll read the visible directions and problems, then ask you to review what we found.</span></div>}
-          {photo && !extraction && <button className="primary full photo-analyze-button" disabled={analyzing || !canContinue} onClick={analyzeSelectedPhoto}>{analyzing ? 'Reading your schoolwork…' : <><Sparkles /> Understand this photo</>}</button>}
+          {photo && !extraction && <button className="primary full photo-analyze-button" disabled={analyzing} onClick={analyzeSelectedPhoto}>{analyzing ? 'Reading your schoolwork…' : <><Sparkles /> Understand this photo</>}</button>}
           {extraction && <section className="extraction-review">
             <div className="extraction-heading"><span><Sparkles /></span><div><p className="eyebrow">PHOTO REVIEW</p><h3>Here’s what I found in your photo</h3><p>Correct anything that was misread before StudySteps creates help.</p></div></div>
             <div className="extraction-meta">
@@ -411,7 +631,25 @@ function GetHelp() {
             <p className="never-auto"><CheckCircle2 /> You control the corrected text. Nothing is saved automatically.</p>
           </section>}
         </div>}
-        {method === 'voice' && <div className="input-panel voice-panel"><button className="voice-button" onClick={startVoice}><Mic /> Start speaking</button>{voiceStatus && <p role="status">{voiceStatus}</p>}<p className="muted-copy">Voice uses your browser’s built-in speech recognition when available. You can always edit the words below.</p></div>}
+        {method === 'voice' && (
+          <div className="input-panel voice-panel">
+            {voiceState === 'listening' ? (
+              <div className="voice-active">
+                <div className="listening-indicator">
+                  <span className="pulse"></span>
+                  <strong>Listening...</strong>
+                </div>
+                <button className="primary danger" onClick={stopVoice} data-testid="button-stop-voice"><Square size={16} /> Stop Listening</button>
+              </div>
+            ) : (
+              <button className="voice-button" onClick={startVoice} data-testid="button-start-voice">
+                <Mic /> Tell StudySteps
+              </button>
+            )}
+            {(voiceState === 'error' || voiceState === 'unsupported') && <p role="status" className="voice-error"><HelpCircle size={16} /> {voiceErrorText}</p>}
+            <p className="muted-copy">Tell StudySteps what you need help with. Voice uses your browser’s built-in speech recognition. You can always edit the words below.</p>
+          </div>
+        )}
         <label className="field"><span>{mode === 'assignment' ? 'Assignment directions' : 'Concept or question'}</span><textarea value={text} onChange={e => setText(e.target.value)} rows={7} placeholder={mode === 'assignment' ? 'Paste the directions here, or explain what your teacher asked you to do…' : 'Example: I don’t understand why seasons happen…'} /><small>{text.length} characters · Include enough detail for useful steps.</small></label>
         {mode === 'assignment' && <div className="details-grid">
           <label className="field"><span>Assignment name</span><input value={title} onChange={e => setTitle(e.target.value)} placeholder="Example: History presentation" /></label>
@@ -419,7 +657,7 @@ function GetHelp() {
           <label className="field"><span>Due date</span><input type="date" value={dueDate} min={isoDate(0)} onChange={e => setDueDate(e.target.value)} /></label>
         </div>}
         {method !== 'photo' && <button className="primary full" disabled={!canContinue} onClick={continueToReview}>Create a draft to review <ArrowRight /></button>}
-        {!canContinue && <p className="form-hint">Add at least a sentence so StudySteps has something to work with.</p>}
+        {method !== 'photo' && !canContinue && <p className="form-hint">Add at least a sentence so StudySteps has something to work with.</p>}
       </section>
       <div className="integrity-note compact"><HelpCircle /><span>We’ll suggest a starting point—not produce answers to turn in. You’ll review everything before deciding what to keep.</span></div>
     </div>
@@ -523,11 +761,19 @@ function Review({ saveAssignment }: { saveAssignment: (a: Assignment) => void })
       <button className="back" onClick={() => navigate('/help')}><ArrowLeft /> Edit what I shared</button>
       <div className="review-banner"><span><Sparkles /></span><div><p className="eyebrow">DRAFT FOR YOUR REVIEW</p><h1>Here’s a possible plan</h1><p>Change anything that doesn’t fit. Nothing is saved until you approve it.</p></div></div>
       <section className="review-card">
-        <h2>Plain-language summary</h2>
+        <div className="review-title" style={{ marginBottom: '10px' }}>
+          <h2>Plain-language summary</h2>
+          <ReadAloud id="review-summary" text={draft.aiSummary || `You’re being asked to complete ${title || 'this assignment'}. The easiest way forward is to identify exactly what the final result needs, gather what you need, and work through one small part at a time.`} />
+        </div>
         <p>{draft.aiSummary || <>You’re being asked to complete <strong>{title || 'this assignment'}</strong>. The easiest way forward is to identify exactly what the final result needs, gather what you need, and work through one small part at a time.</>}</p>
       </section>
       <section className="review-card">
-        <div className="review-title"><div><p className="eyebrow">SUGGESTED STEPS</p><h2>Make this plan yours</h2></div><span>{steps.length} steps</span></div>
+        <div className="review-title"><div><p className="eyebrow">SUGGESTED STEPS</p><h2>Make this plan yours</h2></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <ReadAloud id="review-steps" text={`Suggested steps. ${steps.map(s => s.text).join('. ')}`} label="Read steps" />
+            <span>{steps.length} steps</span>
+          </div>
+        </div>
         <div className="start-here"><ArrowRight /><span><small>START HERE</small>{steps[0]?.text}</span></div>
         <ol className="editable-steps">
           {steps.map((step, i) => <li key={step.id}>
@@ -702,10 +948,29 @@ function ConceptReview({ draft }: { draft: Draft }) {
     <div className="page narrow review-page">
       <button className="back" onClick={() => navigate('/help')}><ArrowLeft /> Try a different question</button>
       <div className="review-banner concept"><span><Lightbulb /></span><div><p className="eyebrow">A SIMPLER WAY IN</p><h1>Let’s make this click</h1><p>This is a practice explanation—not an answer to submit.</p></div></div>
-      <section className="concept-card"><span className="concept-label">SIMPLE EXPLANATION</span><h2>{guide.heading}</h2><p><strong>Your question:</strong> {topic}</p>{guide.explanation.map((paragraph, index) => <p key={index}>{paragraph}</p>)}</section>
-      <section className="concept-card"><span className="concept-label">KEY IDEAS</span><ul className="key-list">{guide.keyIdeas.map(idea => <li key={idea}><Check /> {idea}</li>)}</ul></section>
-      <section className="concept-card analogy"><span className="concept-label">CONCRETE ANALOGY</span><p>{guide.analogy}</p></section>
-      <section className="check-question"><HelpCircle /><div><span>QUICK UNDERSTANDING CHECK</span><h2>{guide.check}</h2><textarea rows={3} aria-label="Your understanding-check answer" placeholder={guide.checkHint} /></div></section>
+      <section className="concept-card">
+        <div className="review-title" style={{ marginBottom: '10px' }}>
+          <div><span className="concept-label">SIMPLE EXPLANATION</span><h2>{guide.heading}</h2></div>
+          <ReadAloud id="concept-explanation" text={`Simple explanation: ${guide.heading}. Your question: ${topic}. ${guide.explanation.join(' ')}`} />
+        </div>
+        <p><strong>Your question:</strong> {topic}</p>
+        {guide.explanation.map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+      </section>
+      <section className="concept-card">
+        <div className="review-title" style={{ marginBottom: '10px' }}>
+          <span className="concept-label">KEY IDEAS</span>
+          <ReadAloud id="concept-key-ideas" text={`Key ideas: ${guide.keyIdeas.join('. ')}`} />
+        </div>
+        <ul className="key-list">{guide.keyIdeas.map(idea => <li key={idea}><Check /> {idea}</li>)}</ul>
+      </section>
+      <section className="concept-card analogy">
+        <div className="review-title" style={{ marginBottom: '10px' }}>
+          <span className="concept-label">CONCRETE ANALOGY</span>
+          <ReadAloud id="concept-analogy" text={`Concrete analogy: ${guide.analogy}`} />
+        </div>
+        <p>{guide.analogy}</p>
+      </section>
+      <section className="check-question"><HelpCircle /><div style={{ width: '100%' }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}><span>QUICK UNDERSTANDING CHECK</span><ReadAloud id="concept-check" text={`Quick understanding check. ${guide.check}. Hint: ${guide.checkHint}`} /></div><h2>{guide.check}</h2><textarea rows={3} aria-label="Your understanding-check answer" placeholder={guide.checkHint} /></div></section>
       <div className="concept-actions"><button className="secondary" onClick={() => navigate('/help')}>Ask another question</button><button className="primary" onClick={() => navigate('/')}>Done for now</button></div>
       <div className="integrity-note compact"><Lightbulb /><span>Use this explanation to build your understanding. Write your final schoolwork in your own words and follow your teacher’s rules.</span></div>
     </div>
@@ -714,6 +979,7 @@ function ConceptReview({ draft }: { draft: Draft }) {
 
 function PhotoHelpReview() {
   const [, navigate] = useLocation();
+  const { activeId, stop: stopReading } = useSpeech();
   const payload = useMemo<{ extraction: PhotoExtraction; help: PhotoHelpResult; dueDate?: string } | null>(() => {
     try { return JSON.parse(sessionStorage.getItem(PHOTO_HELP_KEY) || 'null'); } catch { return null; }
   }, []);
@@ -735,32 +1001,59 @@ function PhotoHelpReview() {
         <button onClick={() => jump('check')}><CheckCircle2 /> Check my answer</button>
       </div>
       <section className="concept-card" id="explain">
-        <span className="concept-label">SKILL: {extraction.skill || 'WHAT THIS PRACTICES'}</span>
+        <div className="review-title" style={{ marginBottom: '10px' }}>
+          <span className="concept-label">SKILL: {extraction.skill || 'WHAT THIS PRACTICES'}</span>
+          <ReadAloud id="photo-explanation" text={`Skill: ${extraction.skill || 'What this practices'}. ${help.explanation.join(' ')}. Key ideas: ${help.keyIdeas.join('. ')}`} />
+        </div>
         {help.explanation.map((paragraph, index) => <p key={index}>{paragraph}</p>)}
         {help.keyIdeas.length > 0 && <ul className="key-list">{help.keyIdeas.map(idea => <li key={idea}><Check /> {idea}</li>)}</ul>}
       </section>
       <section className="concept-card worked-example" id="example">
-        <span className="concept-label">WORKED EXAMPLE</span>
+        <div className="review-title" style={{ marginBottom: '10px' }}>
+          <span className="concept-label">WORKED EXAMPLE</span>
+          <ReadAloud id="photo-example" text={`Worked example. ${help.exampleProblem}. Steps: ${help.exampleSteps.join('. ')}. ${help.exampleAnswer ? `Answer: ${help.exampleAnswer}` : ''}`} />
+        </div>
         <h2>{help.exampleProblem}</h2>
         <ol>{help.exampleSteps.map((step, index) => <li key={index}><span>{index + 1}</span>{step}</li>)}</ol>
         {help.exampleAnswer && <p className="example-answer"><strong>Answer:</strong> {help.exampleAnswer}</p>}
       </section>
       <section className="concept-card" id="solve">
         <span className="concept-label">YOUR PHOTOGRAPHED WORK</span>
-        {help.actualProblems.map((problem, index) => <div className="actual-problem" key={`${problem.problem}-${index}`}>
-          <h2>{problem.problem}</h2>
-          <p>Try this problem using the method above. Ask for a hint when you need one.</p>
-          {(hintLevels[index] ?? 0) > 0 && <div className="progressive-hints"><strong>Hint {hintLevels[index]}</strong><ol>{problem.steps.slice(0, hintLevels[index]).map((step, stepIndex) => <li key={stepIndex}>{step}</li>)}</ol></div>}
-          {revealedAnswers[index] && <div className="answer-reveal"><strong>Answer with reasoning</strong><ol>{problem.steps.map((step, stepIndex) => <li key={stepIndex}>{step}</li>)}</ol><p className="problem-answer"><strong>Final answer:</strong> {problem.answer}</p></div>}
-          <div className="problem-actions">
-            <button className="secondary" disabled={revealedAnswers[index] || (hintLevels[index] ?? 0) >= problem.steps.length} onClick={() => setHintLevels(v => ({ ...v, [index]: Math.min((v[index] ?? 0) + 1, problem.steps.length) }))}><HelpCircle /> Give me a hint</button>
-            <button className="primary" onClick={() => setRevealedAnswers(v => ({ ...v, [index]: !v[index] }))}>{revealedAnswers[index] ? 'Hide answer' : 'Show Answer'}</button>
-          </div>
-        </div>)}
+        {help.actualProblems.map((problem, index) => {
+          const revealedHintLevels = hintLevels[index] ?? 0;
+          const isRevealed = revealedAnswers[index];
+          const textToRead = [
+            `Problem: ${problem.problem}.`,
+            revealedHintLevels > 0 ? `Hints: ${problem.steps.slice(0, revealedHintLevels).join('. ')}` : '',
+            isRevealed ? `Answer with reasoning: ${problem.steps.join('. ')}. Final answer: ${problem.answer}` : ''
+          ].filter(Boolean).join(' ');
+          
+          return (
+            <div className="actual-problem" key={`${problem.problem}-${index}`}>
+              <div className="review-title" style={{ marginBottom: '10px' }}>
+                <h2>{problem.problem}</h2>
+                <ReadAloud id={`photo-problem-${index}`} text={textToRead} />
+              </div>
+              <p>Try this problem using the method above. Ask for a hint when you need one.</p>
+              {(hintLevels[index] ?? 0) > 0 && <div className="progressive-hints"><strong>Hint {hintLevels[index]}</strong><ol>{problem.steps.slice(0, hintLevels[index]).map((step, stepIndex) => <li key={stepIndex}>{step}</li>)}</ol></div>}
+              {revealedAnswers[index] && <div className="answer-reveal"><strong>Answer with reasoning</strong><ol>{problem.steps.map((step, stepIndex) => <li key={stepIndex}>{step}</li>)}</ol><p className="problem-answer"><strong>Final answer:</strong> {problem.answer}</p></div>}
+              <div className="problem-actions">
+                <button className="secondary" disabled={revealedAnswers[index] || (hintLevels[index] ?? 0) >= problem.steps.length} onClick={() => {
+                  if (activeId === `photo-problem-${index}`) stopReading();
+                  setHintLevels(v => ({ ...v, [index]: Math.min((v[index] ?? 0) + 1, problem.steps.length) }));
+                }}><HelpCircle /> Give me a hint</button>
+                <button className="primary" onClick={() => {
+                  if (activeId === `photo-problem-${index}`) stopReading();
+                  setRevealedAnswers(v => ({ ...v, [index]: !v[index] }));
+                }}>{revealedAnswers[index] ? 'Hide answer' : 'Show Answer'}</button>
+              </div>
+            </div>
+          );
+        })}
         {help.actualProblems.length === 0 && <p>{help.summary}</p>}
         {help.guidedTry && <div className="guided-try"><strong>Now try this:</strong><span>{help.guidedTry}</span></div>}
       </section>
-      <section className="check-question" id="check"><HelpCircle /><div><span>CHECK MY ANSWER</span><h2>{help.understandingCheck}</h2><textarea rows={3} value={studentAnswer} onChange={e => setStudentAnswer(e.target.value)} placeholder="Write how you worked it out…" /><p>{studentAnswer.trim() ? 'Good start. Compare each step with the method above, not only the final number.' : 'Explain your thinking so you can check the method as well as the answer.'}</p></div></section>
+      <section className="check-question" id="check"><HelpCircle /><div style={{ width: '100%' }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}><span>CHECK MY ANSWER</span><ReadAloud id="photo-check" text={`Check my answer. ${help.understandingCheck}`} /></div><h2>{help.understandingCheck}</h2><textarea rows={3} value={studentAnswer} onChange={e => setStudentAnswer(e.target.value)} placeholder="Write how you worked it out…" /><p>{studentAnswer.trim() ? 'Good start. Compare each step with the method above, not only the final number.' : 'Explain your thinking so you can check the method as well as the answer.'}</p></div></section>
       <div className="concept-actions">
         <button className="secondary" onClick={() => navigate('/help')}>Try another photo</button>
         <button className="primary" onClick={() => navigate('/')}>Done for now</button>
@@ -842,15 +1135,29 @@ function ProjectLaunchpad() {
     <div className="page narrow review-page launchpad-page">
       <button className="back" onClick={() => navigate('/help')}><ArrowLeft /> Edit the assignment</button>
       <div className="launch-stages" aria-label="Project stages">{['Understand', 'Explore', 'Choose', 'Plan', 'Build', 'Track'].map((stage, index) => <span className={index < 3 ? 'active' : ''} key={stage}>{index + 1}<small>{stage}</small></span>)}</div>
-      <div className="review-banner"><span><Sparkles /></span><div><p className="eyebrow">PROJECT LAUNCHPAD</p><h1>Choose a direction that feels like yours</h1><p>{help.summary}</p></div></div>
-      <section className="review-card"><div className="review-title"><div><p className="eyebrow">EXPLORE</p><h2>Possible project directions</h2></div><span>{help.projectIdeas.length} ideas</span></div>
+      <div className="review-banner"><span><Sparkles /></span><div style={{ width: '100%' }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}><p className="eyebrow">PROJECT LAUNCHPAD</p><ReadAloud id="launchpad-summary" text={help.summary} /></div><h1>Choose a direction that feels like yours</h1><p>{help.summary}</p></div></div>
+      <section className="review-card"><div className="review-title"><div><p className="eyebrow">EXPLORE</p><h2>Possible project directions</h2></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <ReadAloud id="launchpad-ideas" text={`Possible project directions. ${help.projectIdeas.length} ideas. ${help.projectIdeas.map((idea, i) => `Idea ${i + 1}: ${idea.title}. ${idea.description}. Approach: ${idea.approach}. Why it fits: ${idea.whyItFits}.`).join(' ')}`} label="Read ideas" />
+          <span>{help.projectIdeas.length} ideas</span>
+        </div>
+      </div>
         <div className="idea-grid">{help.projectIdeas.map((idea, index) => <button className={`idea-card ${selectedIndex === index ? 'selected' : ''}`} onClick={() => setSelectedIndex(index)} key={idea.title}><span className="idea-number">{index + 1}</span><h3>{idea.title}</h3><p>{idea.description}</p><dl><dt>Materials or approach</dt><dd>{idea.approach}</dd><dt>Why it fits</dt><dd>{idea.whyItFits}</dd></dl><span className="idea-choice">{selectedIndex === index ? <><Check /> Selected</> : 'Choose this direction'}</span></button>)}</div>
       </section>
-      <section className="review-card"><p className="eyebrow">CREDIBLE RESOURCES</p><h2>Research and inspiration</h2>
+      <section className="review-card">
+        <div className="review-title">
+          <div><p className="eyebrow">CREDIBLE RESOURCES</p><h2>Research and inspiration</h2></div>
+          {help.resources.length > 0 && <ReadAloud id="launchpad-resources" text={`Research and inspiration. ${help.resources.map(r => `${r.title} by ${r.organization}. Why it's credible: ${r.credibility}. Use it for: ${r.supports}.`).join(' ')}`} label="Read resources" />}
+        </div>
         {help.resources.length === 0 ? <p className="resource-empty">No verified direct resources are available for this topic yet. StudySteps will not invent links or source details.</p> :
           <div className="resource-list">{help.resources.map(resource => <article className="resource-card" key={resource.url}><div><span className="resource-type">{resource.resourceType}</span><h3>{resource.title}</h3><strong>{resource.organization}</strong></div><p><b>Why it’s credible:</b> {resource.credibility}</p><p><b>Use it for:</b> {resource.supports}</p><p><b>Published or updated:</b> {resource.date}</p><a href={resource.url} target="_blank" rel="noreferrer">Open resource <ArrowRight /></a></article>)}</div>}
       </section>
-      {help.resources.length > 0 && <section className="review-card citation-card"><p className="eyebrow">CITATION SUPPORT</p><div className="citation-heading"><h2>{detected && detected !== 'Not specified' ? `${detected} was detected in the directions` : 'Choose a citation style'}</h2><select value={citationStyle} onChange={e => setCitationStyle(e.target.value as CitationStyle)}><option>MLA</option><option>APA</option><option>Chicago</option></select></div>
+      {help.resources.length > 0 && <section className="review-card citation-card">
+        <div className="review-title">
+          <p className="eyebrow">CITATION SUPPORT</p>
+          {help.resources.length > 0 && <ReadAloud id="launchpad-citations" text={`Citation examples in ${citationStyle} format. ${help.resources.map(r => `${r.title}. Citation: ${citationFor(r, citationStyle)}. In-text example: ${inTextFor(r, citationStyle)}`).join(' ')}`} label="Read citations" />}
+        </div>
+        <div className="citation-heading"><h2>{detected && detected !== 'Not specified' ? `${detected} was detected in the directions` : 'Choose a citation style'}</h2><select value={citationStyle} onChange={e => setCitationStyle(e.target.value as CitationStyle)}><option>MLA</option><option>APA</option><option>Chicago</option></select></div>
         {help.resources.map(resource => <div className="citation-example" key={resource.url}><strong>{resource.title}</strong><p>{citationFor(resource, citationStyle)}</p><small><b>In-text example:</b> {inTextFor(resource, citationStyle)}</small><small>Parts: organization/author · publication date when available · title · direct URL. Verify these details on the source page before submitting.</small></div>)}
       </section>}
       {error && <div className="photo-input-error" role="alert"><HelpCircle />{error}</div>}
@@ -934,7 +1241,16 @@ function AssignmentDetails({ assignments, setAssignments }: { assignments: Assig
       <button className="back" onClick={() => navigate('/')}><ArrowLeft /> Dashboard</button>
       <section className="detail-hero">
         <div className="card-top"><span className={`subject subject-${assignment.subject.toLowerCase()}`}>{assignment.subject}</span><span className="due"><CalendarDays />{dueLabel(assignment.dueDate)}</span></div>
-        <div className="detail-title"><div><h1>{assignment.title}</h1><p>{assignment.summary}</p></div><button className="icon-text" onClick={() => setEditing(true)}><Pencil /> Edit</button></div>
+        <div className="detail-title">
+          <div style={{ paddingRight: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <h1>{assignment.title}</h1>
+              <ReadAloud id="assignment-summary" text={`${assignment.title}. ${assignment.summary}`} label="" />
+            </div>
+            <p>{assignment.summary}</p>
+          </div>
+          <button className="icon-text" onClick={() => setEditing(true)}><Pencil /> Edit</button>
+        </div>
         <div className="metric-row"><div><strong>{pct}%</strong><span>complete</span></div><div><strong>{assignment.steps.filter(s => s.complete).length}/{assignment.steps.length}</strong><span>steps done</span></div><div><strong>{days < 0 ? 'Past' : days}</strong><span>{days < 0 ? 'due' : days === 1 ? 'day left' : 'days left'}</span></div></div>
         <div className="progress-track large"><span style={{ width: `${pct}%` }} /></div>
       </section>
@@ -950,20 +1266,36 @@ function AssignmentDetails({ assignments, setAssignments }: { assignments: Assig
       )}
 
       {!allWorkComplete && (
-        <section className="focus-card"><span><ArrowRight /></span><div><p className="eyebrow">YOUR NEXT STEP</p><h2>{nextStep(assignment)}</h2><p>Just focus on this one. You don’t have to do everything at once.</p></div></section>
+        <section className="focus-card">
+          <span><ArrowRight /></span>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <p className="eyebrow">YOUR NEXT STEP</p>
+              <ReadAloud id="assignment-next-step" text={`Your next step. ${nextStep(assignment)}`} />
+            </div>
+            <h2>{nextStep(assignment)}</h2>
+            <p>Just focus on this one. You don’t have to do everything at once.</p>
+          </div>
+        </section>
       )}
       
       {pct === 100 && !notTurnedIn && (
         <section className="celebration"><CheckCircle2 /><div><h2>Turned in</h2><p>This stays in Completed for 30 days, then StudySteps removes it from this device.</p></div></section>
       )}
 
-      <section className="checklist-card"><div className="review-title"><div><p className="eyebrow">YOUR PLAN</p><h2>Assignment checklist</h2></div><span>{assignment.steps.filter(s => s.complete).length} of {assignment.steps.length}</span></div>
+      <section className="checklist-card"><div className="review-title"><div><p className="eyebrow">YOUR PLAN</p><h2>Assignment checklist</h2></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <ReadAloud id="assignment-plan" text={`Assignment checklist. ${assignment.steps.map((s, i) => `Step ${i + 1}: ${s.text}. ${s.complete ? 'Complete.' : 'Not complete.'}`).join(' ')}`} label="Read plan" />
+          <span>{assignment.steps.filter(s => s.complete).length} of {assignment.steps.length}</span>
+        </div>
+      </div>
         <div className="checklist">{assignment.steps.map((s, i) => <button key={s.id} className={s.complete ? 'done' : ''} onClick={() => toggleStep(s.id)}><span className="check-control">{s.complete ? <Check /> : <Circle />}</span><span><small>STEP {i + 1}</small>{s.text}</span></button>)}</div>
       </section>
 
       <section className="checklist-card" data-testid="turn-in-checklist">
         <div className="review-title">
           <div><p className="eyebrow">READY TO SUBMIT?</p><h2>Turn in checklist</h2></div>
+          <ReadAloud id="assignment-turnin" text={`Turn in checklist. Method: ${assignment.turnInMethod}. Deliverables: ${assignment.deliverables?.length ? assignment.deliverables.map(d => `${d.text}, ${d.complete ? 'Complete' : 'Not complete'}`).join('. ') : 'No deliverables.'}`} label="Read turn-in" />
         </div>
         <div className="turn-in-method"><strong>Method:</strong> {assignment.turnInMethod}</div>
         {assignment.deliverables?.length > 0 ? (
@@ -1062,5 +1394,5 @@ function AppRouter() {
 }
 function RoutedErrorBoundary({ children }: { children: ReactNode }) { const [location] = useLocation(); return <ErrorBoundary resetKey={location}>{children}</ErrorBoundary>; }
 export default function App() {
-  return <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><AppRouter /></WouterRouter>;
+  return <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><SpeechProvider><AppRouter /></SpeechProvider></WouterRouter>;
 }
