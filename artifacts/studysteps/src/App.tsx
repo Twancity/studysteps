@@ -12,13 +12,20 @@ import NotFound from '@/pages/not-found';
 import './index.css';
 
 type Step = { id: string; text: string; complete: boolean };
+type AssignmentStatus = 'Not Started' | 'Working On It' | 'Ready to Turn In' | 'Turned In';
+type Deliverable = { id: string; text: string; complete: boolean };
 type Assignment = {
   id: string; title: string; subject: string; dueDate: string; summary: string;
   steps: Step[]; createdAt: string;
+  status: AssignmentStatus;
+  deliverables: Deliverable[];
+  turnInMethod: string;
+  turnedInAt?: string;
+  reminderEnabled?: boolean;
 };
 type Mode = 'assignment' | 'concept';
 type InputMethod = 'text' | 'photo' | 'voice';
-type Draft = { mode: Mode; text: string; title: string; subject: string; dueDate: string; suggestedSteps?: string[]; aiSummary?: string };
+type Draft = { mode: Mode; text: string; title: string; subject: string; dueDate: string; suggestedSteps?: string[]; aiSummary?: string; deliverables?: string[]; turnInMethod?: string; };
 
 const STORAGE_KEY = 'studysteps.assignments.v1';
 const DRAFT_KEY = 'studysteps.draft.v1';
@@ -31,6 +38,7 @@ const isoDate = (days: number) => {
 
 const seedAssignments: Assignment[] = [
   {
+    status: 'Working On It', deliverables: [{ id: 'd1', text: 'Completed poster', complete: true }], turnInMethod: 'Turn-in method not provided',
     id: 'sample-science', title: 'Ecosystem food web poster', subject: 'Science',
     dueDate: isoDate(1), summary: 'Create a clear poster showing how energy moves through an ecosystem.',
     createdAt: new Date().toISOString(),
@@ -43,7 +51,7 @@ const seedAssignments: Assignment[] = [
     ],
   },
   {
-    id: 'sample-english', title: 'Character analysis paragraph', subject: 'English',
+    id: 'sample-english', status: 'Not Started', deliverables: [{ id: 'd2', text: 'Written paragraph', complete: false }], turnInMethod: 'Turn-in method not provided', title: 'Character analysis paragraph', subject: 'English',
     dueDate: isoDate(4), summary: 'Write one supported paragraph about how a character changes.',
     createdAt: new Date().toISOString(),
     steps: [
@@ -55,7 +63,7 @@ const seedAssignments: Assignment[] = [
     ],
   },
   {
-    id: 'sample-math', title: 'Fractions practice set', subject: 'Math',
+    id: 'sample-math', status: 'Turned In', turnedInAt: new Date().toISOString(), deliverables: [{ id: 'd3', text: 'Completed worksheet', complete: true }], turnInMethod: 'Turn-in method not provided', title: 'Fractions practice set', subject: 'Math',
     dueDate: isoDate(-1), summary: 'Complete and check the assigned fraction problems.',
     createdAt: new Date().toISOString(),
     steps: [
@@ -69,17 +77,136 @@ const seedAssignments: Assignment[] = [
 function useAssignments() {
   const [items, setItems] = useState<Assignment[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) { try { return JSON.parse(saved); } catch { /* seed below */ } }
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (!Array.isArray(parsed)) {
+          localStorage.setItem(`${STORAGE_KEY}.recovery`, saved);
+          return seedAssignments;
+        }
+        const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
+        const now = Date.now();
+        const migrated = parsed.map((a: any) => {
+          let status = a.status;
+          if (!status) {
+            status = a.steps?.length && a.steps.every((s: any) => s.complete) ? 'Ready to Turn In' : (a.steps?.some((s: any) => s.complete) ? 'Working On It' : 'Not Started');
+          }
+          return {
+            ...a,
+            status,
+            deliverables: a.deliverables || [],
+            turnInMethod: a.turnInMethod || 'Turn-in method not provided',
+            turnedInAt: a.turnedInAt,
+            reminderEnabled: a.reminderEnabled || false
+          } as Assignment;
+        }).filter((a: Assignment) => {
+          if (a.status === 'Turned In' && a.turnedInAt) {
+            const turnedInTime = new Date(a.turnedInAt).getTime();
+            return Number.isNaN(turnedInTime) || (now - turnedInTime) < THIRTY_DAYS;
+          }
+          return true;
+        });
+        return migrated;
+      } catch {
+        localStorage.setItem(`${STORAGE_KEY}.recovery`, saved);
+      }
+    }
     return seedAssignments;
   });
   useEffect(() => localStorage.setItem(STORAGE_KEY, JSON.stringify(items)), [items]);
+  useEffect(() => {
+    const removeExpired = () => {
+      const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      setItems(current => current.filter(a => {
+        if (a.status !== 'Turned In' || !a.turnedInAt) return true;
+        const turnedInTime = new Date(a.turnedInAt).getTime();
+        return Number.isNaN(turnedInTime) || turnedInTime > cutoff;
+      }));
+    };
+    removeExpired();
+    const timer = window.setInterval(removeExpired, 60 * 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, []);
   return { items, setItems };
 }
 
-const progress = (a: Assignment) =>
-  a.steps.length ? Math.round((a.steps.filter(s => s.complete).length / a.steps.length) * 100) : 0;
-const nextStep = (a: Assignment) => a.steps.find(s => !s.complete)?.text ?? 'All steps complete';
-const daysRemaining = (date: string) => Math.ceil((new Date(`${date}T23:59:59`).getTime() - Date.now()) / 86400000);
+function useReminders(assignments: Assignment[]) {
+  const notified = useRef(new Set<string>());
+  
+  useEffect(() => {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+
+    const checkDueWork = () => {
+      assignments.forEach(a => {
+        if (a.reminderEnabled && a.status !== 'Turned In') {
+          const days = daysRemaining(a.dueDate);
+          const reminderKey = `${a.id}:${a.dueDate}:${days}`;
+          if (days <= 1 && !notified.current.has(reminderKey)) {
+            notified.current.add(reminderKey);
+            new Notification('StudySteps Reminder', {
+              body: days < 0 ? `'${a.title}' is overdue.` : `'${a.title}' is due ${days === 0 ? 'today' : 'tomorrow'}.`
+            });
+          }
+        }
+      });
+    };
+    checkDueWork();
+    const timer = window.setInterval(checkDueWork, 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, [assignments]);
+}
+
+const deriveDeliverablesAndMethod = (text: string) => {
+  const input = text.toLowerCase();
+  const deliverables: string[] = [];
+  const explicitlyRequires = (item: string) => new RegExp(
+    `\\b(?:write|create|make|build|complete|prepare|submit|turn in|hand in|upload|bring|present|include|provide)\\b[^.!?\\n]{0,80}\\b(?:${item})\\b|\\b(?:${item})\\b[^.!?\\n]{0,50}\\b(?:is required|must be submitted|must be turned in|due)\\b`,
+    'i'
+  ).test(input);
+  if (explicitlyRequires('essay|paper|report')) deliverables.push('Written paper or report');
+  else if (explicitlyRequires('paragraph')) deliverables.push('Written paragraph');
+  if (explicitlyRequires('slides?|slideshow|powerpoint|google slides')) deliverables.push('Presentation slides');
+  else if (explicitlyRequires('presentation')) deliverables.push('Class presentation');
+  if (explicitlyRequires('poster|display board')) deliverables.push('Completed poster');
+  if (explicitlyRequires('worksheet|packet')) deliverables.push('Completed worksheet');
+  if (explicitlyRequires('video|recording')) deliverables.push('Video recording');
+  if (explicitlyRequires('works cited|bibliography|reference list|citations?')) deliverables.push('Required sources and citations');
+  if (explicitlyRequires('photo|image')) deliverables.push('Required photo or image');
+
+  let turnInMethod = 'Turn-in method not provided';
+  const namedSystem = input.match(/\b(?:submit|upload|turn in|hand in)\b[^.!?\n]{0,50}\b(google classroom|canvas|blackboard|schoology)\b|\b(google classroom|canvas|blackboard|schoology)\b[^.!?\n]{0,50}\b(?:submit|upload|turn in|hand in)\b/i);
+  const systemName = namedSystem?.[1] || namedSystem?.[2];
+  if (systemName) {
+    turnInMethod = `Submit through ${systemName.replace(/\b\w/g, letter => letter.toUpperCase())}`;
+  } else if (/\b(?:upload|submit online)\b[^.!?\n]{0,60}\b(?:assignment|work|file|photo|image|essay|report|slides?|presentation)\b|\b(?:assignment|work|file|photo|image|essay|report|slides?|presentation)\b[^.!?\n]{0,60}\b(?:upload|submit online)\b/.test(input)) {
+    turnInMethod = 'Upload online';
+  } else if (/\bbring\b[^.!?\n]{0,60}\bclass\b|\bclass\b[^.!?\n]{0,60}\bbring\b/.test(input)) {
+    turnInMethod = 'Bring to class';
+  } else if (/\b(?:hand|turn)\s+in\b[^.!?\n]{0,60}\b(?:teacher|class|assignment|work|paper|worksheet|project)\b/.test(input)) {
+    turnInMethod = 'Hand to teacher';
+  } else if (/\bpresent(?:ation)?\s+in\s+class\b/.test(input)) {
+    turnInMethod = 'Present in class';
+  } else if (/\b(?:email|send)\b[^.!?\n]{0,60}\b(?:assignment|work|file|photo|image|essay|report|slides?|presentation|teacher)\b|\b(?:assignment|work|file|photo|image|essay|report|slides?|presentation)\b[^.!?\n]{0,60}\b(?:email|send)\b/.test(input)) {
+    turnInMethod = 'Email to teacher';
+  }
+
+  return { deliverables, turnInMethod };
+};
+
+const progress = (a: Assignment) => {
+  const items = [...a.steps, ...a.deliverables];
+  return items.length ? Math.round((items.filter(item => item.complete).length / items.length) * 100) : 0;
+};
+const nextStep = (a: Assignment) =>
+  a.steps.find(s => !s.complete)?.text ??
+  a.deliverables.find(d => !d.complete)?.text ??
+  'All work complete';
+const daysRemaining = (date: string) => {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const due = new Date(`${date}T00:00:00`);
+  return Math.round((due.getTime() - today.getTime()) / 86400000);
+};
 const dueLabel = (date: string) => {
   const days = daysRemaining(date);
   if (days < 0) return `Due ${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} ago`;
@@ -101,9 +228,9 @@ function Shell({ children }: { children: ReactNode }) {
       </header>
       <main>{children}</main>
       <nav className="bottom-nav" aria-label="Main navigation">
-        <button className={location === '/' ? 'active' : ''} onClick={() => navigate('/')}><Home /><span>Dashboard</span></button>
+        <button className={location === '/' && !location.startsWith('/assignments') ? 'active' : ''} onClick={() => navigate('/')}><Home /><span>Dashboard</span></button>
+        <button className={location === '/done-due' ? 'active' : ''} onClick={() => navigate('/done-due')} data-testid="nav-done-due"><Clock3 /><span>Done & Due</span></button>
         <button className={location.startsWith('/help') || location === '/review' ? 'active help-nav' : 'help-nav'} onClick={() => navigate('/help')}><Plus /><span>Get Help</span></button>
-        <button className={location.startsWith('/assignments') ? 'active' : ''} onClick={() => navigate('/')}><ListChecks /><span>My Work</span></button>
       </nav>
     </div>
   );
@@ -111,8 +238,8 @@ function Shell({ children }: { children: ReactNode }) {
 
 function Dashboard({ assignments }: { assignments: Assignment[] }) {
   const [, navigate] = useLocation();
-  const complete = assignments.filter(a => progress(a) === 100);
-  const active = assignments.filter(a => progress(a) < 100);
+  const complete = assignments.filter(a => a.status === 'Turned In');
+  const active = assignments.filter(a => a.status !== 'Turned In');
   const today = active.filter(a => daysRemaining(a.dueDate) <= 1);
   const upcoming = active.filter(a => daysRemaining(a.dueDate) > 1);
   return (
@@ -217,7 +344,7 @@ function GetHelp() {
         sessionStorage.setItem(PROJECT_LAUNCHPAD_KEY, JSON.stringify({ extraction, help, dueDate }));
         navigate('/project-launchpad');
       } else {
-        sessionStorage.setItem(PHOTO_HELP_KEY, JSON.stringify({ extraction, help }));
+        sessionStorage.setItem(PHOTO_HELP_KEY, JSON.stringify({ extraction, help, dueDate }));
         navigate('/photo-help');
       }
     } catch {
@@ -236,7 +363,8 @@ function GetHelp() {
     r.onend = () => recognition.current = null; r.start();
   };
   const continueToReview = () => {
-    const draft: Draft = { mode, text: text.trim(), title: title.trim() || text.trim().split(/[.!?\n]/)[0].slice(0, 55), subject, dueDate };
+    const derived = deriveDeliverablesAndMethod(text);
+    const draft: Draft = { mode, text: text.trim(), title: title.trim() || text.trim().split(/[.!?\n]/)[0].slice(0, 55), subject, dueDate, deliverables: derived.deliverables, turnInMethod: derived.turnInMethod };
     sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); navigate('/review');
   };
   const canContinue = text.trim().length >= 10;
@@ -382,7 +510,12 @@ function Review({ saveAssignment }: { saveAssignment: (a: Assignment) => void })
   const approve = () => {
     const clean = steps.filter(s => s.text.trim()).map(s => ({ ...s, text: s.text.trim() }));
     if (!clean.length || !title.trim()) return;
-    const a: Assignment = { id: uid(), title: title.trim(), subject, dueDate, summary: `A step-by-step plan for: ${draft.text.slice(0, 180)}${draft.text.length > 180 ? '…' : ''}`, steps: clean, createdAt: new Date().toISOString() };
+    const a: Assignment = { 
+      id: uid(), title: title.trim(), subject, dueDate, summary: `A step-by-step plan for: ${draft.text.slice(0, 180)}${draft.text.length > 180 ? '…' : ''}`, steps: clean, createdAt: new Date().toISOString(),
+      status: 'Not Started',
+      deliverables: draft.deliverables ? draft.deliverables.map(d => ({ id: uid(), text: d, complete: false })) : [],
+      turnInMethod: draft.turnInMethod || 'Turn-in method not provided'
+    };
     saveAssignment(a); sessionStorage.removeItem(DRAFT_KEY); navigate(`/assignments/${a.id}`);
   };
   return (
@@ -581,7 +714,7 @@ function ConceptReview({ draft }: { draft: Draft }) {
 
 function PhotoHelpReview() {
   const [, navigate] = useLocation();
-  const payload = useMemo<{ extraction: PhotoExtraction; help: PhotoHelpResult } | null>(() => {
+  const payload = useMemo<{ extraction: PhotoExtraction; help: PhotoHelpResult; dueDate?: string } | null>(() => {
     try { return JSON.parse(sessionStorage.getItem(PHOTO_HELP_KEY) || 'null'); } catch { return null; }
   }, []);
   const [studentAnswer, setStudentAnswer] = useState('');
@@ -628,7 +761,25 @@ function PhotoHelpReview() {
         {help.guidedTry && <div className="guided-try"><strong>Now try this:</strong><span>{help.guidedTry}</span></div>}
       </section>
       <section className="check-question" id="check"><HelpCircle /><div><span>CHECK MY ANSWER</span><h2>{help.understandingCheck}</h2><textarea rows={3} value={studentAnswer} onChange={e => setStudentAnswer(e.target.value)} placeholder="Write how you worked it out…" /><p>{studentAnswer.trim() ? 'Good start. Compare each step with the method above, not only the final number.' : 'Explain your thinking so you can check the method as well as the answer.'}</p></div></section>
-      <div className="concept-actions"><button className="secondary" onClick={() => navigate('/help')}>Try another photo</button><button className="primary" onClick={() => navigate('/')}>Done for now</button></div>
+      <div className="concept-actions">
+        <button className="secondary" onClick={() => navigate('/help')}>Try another photo</button>
+        <button className="primary" onClick={() => navigate('/')}>Done for now</button>
+        <button className="primary" data-testid="track-assignment-btn" onClick={() => {
+          const draft: Draft = {
+            mode: 'assignment',
+            text: [extraction.directions, extraction.visibleContent].join('\n\n'),
+            title: extraction.title || 'Worksheet practice',
+            subject: extraction.subject || 'Other',
+            dueDate: payload.dueDate || isoDate(1),
+            suggestedSteps: help.planSteps.length ? help.planSteps : ['Review the examples and explanations', 'Complete the remaining problems'],
+            aiSummary: help.summary,
+            deliverables: help.deliverables,
+            turnInMethod: help.turnInMethod
+          };
+          sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+          navigate('/review');
+        }}>Track as Assignment</button>
+      </div>
       <div className="integrity-note compact"><Lightbulb /><span>StudySteps may show solutions when they teach the reasoning. Follow your teacher’s rules and write submitted work in your own words.</span></div>
     </div>
   );
@@ -676,6 +827,8 @@ function ProjectLaunchpad() {
         dueDate: payload.dueDate,
         suggestedSteps: [...sourceSteps, ...plan.planSteps],
         aiSummary: plan.summary,
+        deliverables: help.deliverables,
+        turnInMethod: help.turnInMethod
       };
       sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
       navigate('/review');
@@ -714,11 +867,68 @@ function AssignmentDetails({ assignments, setAssignments }: { assignments: Assig
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [form, setForm] = useState(() => assignment ? { title: assignment.title, subject: assignment.subject, dueDate: assignment.dueDate } : { title: '', subject: '', dueDate: '' });
+  
   if (!assignment) return <div className="page narrow empty-state"><h1>Assignment not found</h1><button className="primary" onClick={() => navigate('/')}>Back to Dashboard</button></div>;
+  
   const pct = progress(assignment); const days = daysRemaining(assignment.dueDate);
-  const toggle = (id: string) => setAssignments(v => v.map(a => a.id === assignment.id ? { ...a, steps: a.steps.map(s => s.id === id ? { ...s, complete: !s.complete } : s) } : a));
+  const allStepsComplete = assignment.steps.length > 0 && assignment.steps.every(s => s.complete);
+  const allDeliverablesComplete = assignment.deliverables.length === 0 || assignment.deliverables.every(d => d.complete);
+  const allWorkComplete = allStepsComplete && allDeliverablesComplete;
+  const notTurnedIn = assignment.status !== 'Turned In';
+
+  const toggleStep = (id: string) => setAssignments(v => v.map(a => {
+    if (a.id !== assignment.id) return a;
+    const steps = a.steps.map(s => s.id === id ? { ...s, complete: !s.complete } : s);
+    let newStatus = a.status;
+    if (a.status !== 'Turned In') {
+      const someComplete = steps.some(s => s.complete) || (a.deliverables || []).some(d => d.complete);
+      const allComplete = steps.every(s => s.complete) && (!a.deliverables?.length || a.deliverables.every(d => d.complete));
+      if (allComplete) newStatus = 'Ready to Turn In';
+      else if (someComplete) newStatus = 'Working On It';
+      else newStatus = 'Not Started';
+    }
+    return { ...a, steps, status: newStatus };
+  }));
+
+  const toggleDeliverable = (id: string) => setAssignments(v => v.map(a => {
+    if (a.id !== assignment.id) return a;
+    const deliverables = a.deliverables.map(d => d.id === id ? { ...d, complete: !d.complete } : d);
+    let newStatus = a.status;
+    if (a.status !== 'Turned In') {
+      const someComplete = a.steps.some(s => s.complete) || deliverables.some(d => d.complete);
+      const allComplete = a.steps.every(s => s.complete) && deliverables.every(d => d.complete);
+      if (allComplete) newStatus = 'Ready to Turn In';
+      else if (someComplete) newStatus = 'Working On It';
+      else newStatus = 'Not Started';
+    }
+    return { ...a, deliverables, status: newStatus };
+  }));
+
+  const setStatus = (status: AssignmentStatus) => setAssignments(v => v.map(a => {
+    if (a.id !== assignment.id) return a;
+    return { ...a, status, turnedInAt: status === 'Turned In' ? new Date().toISOString() : undefined };
+  }));
+
+  const requestNotificationPermission = async () => {
+    if (!('Notification' in window)) {
+      alert("Browser notifications aren't supported on this device.");
+      return;
+    }
+    if (Notification.permission === 'granted') {
+      setAssignments(v => v.map(a => a.id === assignment.id ? { ...a, reminderEnabled: !a.reminderEnabled } : a));
+    } else {
+      const permission = await Notification.requestPermission();
+      if (permission === 'granted') {
+         setAssignments(v => v.map(a => a.id === assignment.id ? { ...a, reminderEnabled: !a.reminderEnabled } : a));
+      } else {
+         alert("Notification permission was denied. You can change this in your browser settings.");
+      }
+    }
+  };
+
   const saveEdit = () => { setAssignments(v => v.map(a => a.id === assignment.id ? { ...a, ...form } : a)); setEditing(false); };
   const remove = () => { setAssignments(v => v.filter(a => a.id !== assignment.id)); navigate('/'); };
+
   return (
     <div className="page narrow details-page">
       <button className="back" onClick={() => navigate('/')}><ArrowLeft /> Dashboard</button>
@@ -728,11 +938,67 @@ function AssignmentDetails({ assignments, setAssignments }: { assignments: Assig
         <div className="metric-row"><div><strong>{pct}%</strong><span>complete</span></div><div><strong>{assignment.steps.filter(s => s.complete).length}/{assignment.steps.length}</strong><span>steps done</span></div><div><strong>{days < 0 ? 'Past' : days}</strong><span>{days < 0 ? 'due' : days === 1 ? 'day left' : 'days left'}</span></div></div>
         <div className="progress-track large"><span style={{ width: `${pct}%` }} /></div>
       </section>
-      {pct < 100 ? <section className="focus-card"><span><ArrowRight /></span><div><p className="eyebrow">YOUR NEXT STEP</p><h2>{nextStep(assignment)}</h2><p>Just focus on this one. You don’t have to do everything at once.</p></div></section> :
-        <section className="celebration"><CheckCircle2 /><div><h2>You finished every step!</h2><p>Take a moment to check your work against the directions before turning it in.</p></div></section>}
+
+      {allWorkComplete && notTurnedIn && (
+        <section className="celebration turned-in-reminder" data-testid="status-reminder">
+          <CheckCircle2 />
+          <div>
+            <h2>You finished this, but did you turn it in?</h2>
+            <p>Make sure you submit your work using the method below, then mark it Turned In.</p>
+          </div>
+        </section>
+      )}
+
+      {!allWorkComplete && (
+        <section className="focus-card"><span><ArrowRight /></span><div><p className="eyebrow">YOUR NEXT STEP</p><h2>{nextStep(assignment)}</h2><p>Just focus on this one. You don’t have to do everything at once.</p></div></section>
+      )}
+      
+      {pct === 100 && !notTurnedIn && (
+        <section className="celebration"><CheckCircle2 /><div><h2>Turned in</h2><p>This stays in Completed for 30 days, then StudySteps removes it from this device.</p></div></section>
+      )}
+
       <section className="checklist-card"><div className="review-title"><div><p className="eyebrow">YOUR PLAN</p><h2>Assignment checklist</h2></div><span>{assignment.steps.filter(s => s.complete).length} of {assignment.steps.length}</span></div>
-        <div className="checklist">{assignment.steps.map((s, i) => <button key={s.id} className={s.complete ? 'done' : ''} onClick={() => toggle(s.id)}><span className="check-control">{s.complete ? <Check /> : <Circle />}</span><span><small>STEP {i + 1}</small>{s.text}</span></button>)}</div>
+        <div className="checklist">{assignment.steps.map((s, i) => <button key={s.id} className={s.complete ? 'done' : ''} onClick={() => toggleStep(s.id)}><span className="check-control">{s.complete ? <Check /> : <Circle />}</span><span><small>STEP {i + 1}</small>{s.text}</span></button>)}</div>
       </section>
+
+      <section className="checklist-card" data-testid="turn-in-checklist">
+        <div className="review-title">
+          <div><p className="eyebrow">READY TO SUBMIT?</p><h2>Turn in checklist</h2></div>
+        </div>
+        <div className="turn-in-method"><strong>Method:</strong> {assignment.turnInMethod}</div>
+        {assignment.deliverables?.length > 0 ? (
+          <div className="checklist">
+            {assignment.deliverables.map((d) => (
+              <button key={d.id} className={d.complete ? 'done' : ''} onClick={() => toggleDeliverable(d.id)}>
+                <span className="check-control">{d.complete ? <Check /> : <Circle />}</span>
+                <span>{d.text}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="small-empty">No deliverables were identified.</p>
+        )}
+      </section>
+
+      <section className="status-controls">
+        <p className="eyebrow">CURRENT STATUS</p>
+        <div className="status-grid" data-testid="status-controls">
+           {(['Not Started', 'Working On It', 'Ready to Turn In', 'Turned In'] as const).map(s => (
+             <button key={s} className={`status-btn ${assignment.status === s ? 'active' : ''}`} onClick={() => setStatus(s)}>
+               {s === 'Turned In' ? <CheckCircle2 /> : <Circle />} {s}
+             </button>
+           ))}
+        </div>
+      </section>
+
+      <section className="reminder-controls">
+        <p className="eyebrow">REMINDERS</p>
+        <button className={`secondary ${assignment.reminderEnabled ? 'active' : ''}`} onClick={requestNotificationPermission} data-testid="reminder-toggle">
+          {assignment.reminderEnabled ? <Check /> : <Clock3 />} Browser reminders {assignment.reminderEnabled ? 'enabled' : 'off'}
+        </button>
+        <small>Optional browser reminders appear while StudySteps is open. In-app due labels always remain available.</small>
+      </section>
+
       <button className="delete-button" onClick={() => setConfirmDelete(true)}><Trash2 /> Delete assignment</button>
       {editing && <div className="modal-backdrop" role="presentation"><div className="modal" role="dialog" aria-modal="true" aria-labelledby="edit-title"><div className="modal-head"><h2 id="edit-title">Edit assignment</h2><button onClick={() => setEditing(false)} aria-label="Close"><X /></button></div><label className="field"><span>Name</span><input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></label><div className="details-grid"><label className="field"><span>Subject</span><input value={form.subject} onChange={e => setForm({ ...form, subject: e.target.value })} /></label><label className="field"><span>Due date</span><input type="date" value={form.dueDate} onChange={e => setForm({ ...form, dueDate: e.target.value })} /></label></div><div className="modal-actions"><button className="secondary" onClick={() => setEditing(false)}>Cancel</button><button className="primary" onClick={saveEdit}>Save changes</button></div></div></div>}
       {confirmDelete && <div className="modal-backdrop" role="presentation"><div className="modal small" role="alertdialog" aria-modal="true" aria-labelledby="delete-title"><span className="danger-icon"><Trash2 /></span><h2 id="delete-title">Delete this assignment?</h2><p>This removes the plan and its progress from this device. This can’t be undone.</p><div className="modal-actions"><button className="secondary" onClick={() => setConfirmDelete(false)}>Keep it</button><button className="danger" onClick={remove}>Delete</button></div></div></div>}
@@ -740,11 +1006,52 @@ function AssignmentDetails({ assignments, setAssignments }: { assignments: Assig
   );
 }
 
+function DoneDue({ assignments }: { assignments: Assignment[] }) {
+  const [, navigate] = useLocation();
+  const active = assignments.filter(a => a.status !== 'Turned In');
+  const overdue = active.filter(a => daysRemaining(a.dueDate) < 0);
+  const dueToday = active.filter(a => daysRemaining(a.dueDate) === 0);
+  const dueTomorrow = active.filter(a => daysRemaining(a.dueDate) === 1);
+  const dueSoon = active.filter(a => daysRemaining(a.dueDate) > 1 && daysRemaining(a.dueDate) <= 3);
+  const later = active.filter(a => daysRemaining(a.dueDate) > 3);
+
+  const Group = ({ title, items, empty }: { title: string; items: Assignment[]; empty?: string }) => (
+    <section className="assignment-section done-due-group">
+      <div className="section-title"><h2>{title}</h2><span>{items.length}</span></div>
+      {items.length === 0 ? (empty ? <p className="small-empty">{empty}</p> : null) :
+        <div className="card-grid">
+          {items.map(a => <AssignmentCard key={a.id} assignment={a} onClick={() => navigate(`/assignments/${a.id}`)} completed={false} />)}
+        </div>
+      }
+    </section>
+  );
+
+  return (
+    <div className="page narrow done-due-page">
+      <div className="page-heading">
+        <p className="eyebrow">YOUR ACTIVE WORK</p>
+        <h1>Done & Due</h1>
+        <p>Keep track of what’s coming up.</p>
+      </div>
+      <Group title="Overdue" items={overdue} />
+      <Group title="Due Today" items={dueToday} empty="Nothing due today." />
+      <Group title="Due Tomorrow" items={dueTomorrow} empty="Nothing due tomorrow." />
+      <Group title="Due Soon" items={dueSoon} empty="Nothing due in the next 3 days." />
+      <Group title="Later" items={later} />
+      <div className="integrity-note compact">
+         <Lightbulb /><span>Turned-in work is removed after 30 days. Active work stays until you turn it in.</span>
+      </div>
+    </div>
+  );
+}
+
 function AppRouter() {
   const { items, setItems } = useAssignments();
+  useReminders(items);
   const saveAssignment = (a: Assignment) => setItems(v => [a, ...v]);
   return <Shell><RoutedErrorBoundary><Switch>
     <Route path="/"><Dashboard assignments={items} /></Route>
+    <Route path="/done-due"><DoneDue assignments={items} /></Route>
     <Route path="/help"><GetHelp /></Route>
     <Route path="/review"><Review saveAssignment={saveAssignment} /></Route>
     <Route path="/photo-help"><PhotoHelpReview /></Route>

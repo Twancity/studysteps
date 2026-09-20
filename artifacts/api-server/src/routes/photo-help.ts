@@ -199,8 +199,10 @@ router.post("/photo-help", async (req: Request, res: Response) => {
                 },
               },
               detectedCitationStyle: { type: "string", enum: ["MLA", "APA", "Chicago", "Not specified"] },
+              deliverables: { type: "array", items: { type: "string" } },
+              turnInMethod: { type: "string" },
             },
-            required: ["kind", "heading", "explanation", "keyIdeas", "exampleProblem", "exampleSteps", "exampleAnswer", "actualProblems", "guidedTry", "understandingCheck", "summary", "planSteps", "projectIdeas", "resources", "detectedCitationStyle"],
+            required: ["kind", "heading", "explanation", "keyIdeas", "exampleProblem", "exampleSteps", "exampleAnswer", "actualProblems", "guidedTry", "understandingCheck", "summary", "planSteps", "projectIdeas", "resources", "detectedCitationStyle", "deliverables", "turnInMethod"],
           },
         },
       },
@@ -216,6 +218,7 @@ For worksheet_problem:
 - include a simple guided try, progressive-hint-ready reasoning, and understanding check
 - keep planSteps empty
 - keep projectIdeas and resources empty and detectedCitationStyle "Not specified"
+- list a worksheet in deliverables only when the approved directions or visible content indicate that the worksheet itself must be submitted, handed in, uploaded, or brought to class
 - for missing-addend equations, explicitly explain that the blank is the number added to make the total. For "54 + ____ = 54", explain that adding 0 does not change 54, so the blank is 0.
 
 For assignment_project:
@@ -228,6 +231,11 @@ For assignment_project:
 For concept_topic:
 - provide a plain-language explanation, key ideas, a grounded example or analogy, and an understanding check
 - leave planSteps, projectIdeas, resources, and actualProblems empty; detectedCitationStyle is "Not specified"
+
+For every kind:
+- extract deliverables only from explicit assignment language: items the student must submit, present, bring, upload, or hand in. Include required research sources or citations only when the instructions make them part of the submitted work. Never invent a file, photo, physical item, or extra deliverable.
+- set turnInMethod to the explicit method stated in the approved extraction, such as "Upload through Google Classroom", "Hand to teacher", "Bring to class", or "Present in class"
+- when no submission method is stated, return exactly "Turn-in method not provided"
 
 Support learning and reasoning. It is acceptable to provide a solution with reasoning. Never write a submission-ready essay or complete a graded creative project for the student.`,
         },

@@ -95,7 +95,9 @@ export const CreatePhotoHelpResponse = zod.object({
   "url": zod.string(),
   "resourceType": zod.enum(['article', 'activity', 'image', 'video'])
 })),
-  "detectedCitationStyle": zod.enum(['MLA', 'APA', 'Chicago', 'Not specified'])
+  "detectedCitationStyle": zod.enum(['MLA', 'APA', 'Chicago', 'Not specified']),
+  "deliverables": zod.array(zod.string()).describe('Explicit items the student must submit, present, bring, upload, or hand in'),
+  "turnInMethod": zod.string().describe('Explicit submission method or Turn-in method not provided')
 })
 
 

@@ -218,7 +218,15 @@ components:
         detectedCitationStyle:
           type: string
           enum: [MLA, APA, Chicago, Not specified]
-      required: [kind, heading, explanation, keyIdeas, exampleProblem, exampleSteps, exampleAnswer, actualProblems, guidedTry, understandingCheck, summary, planSteps, projectIdeas, resources, detectedCitationStyle]
+        deliverables:
+          type: array
+          description: Explicit items the student must submit, present, bring, upload, or hand in
+          items:
+            type: string
+        turnInMethod:
+          type: string
+          description: Explicit submission method or Turn-in method not provided
+      required: [kind, heading, explanation, keyIdeas, exampleProblem, exampleSteps, exampleAnswer, actualProblems, guidedTry, understandingCheck, summary, planSteps, projectIdeas, resources, detectedCitationStyle, deliverables, turnInMethod]
     ResearchResource:
       type: object
       properties:

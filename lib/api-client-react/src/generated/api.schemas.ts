@@ -110,6 +110,10 @@ export interface PhotoHelpResult {
   projectIdeas: PhotoHelpResultProjectIdeasItem[];
   resources: ResearchResource[];
   detectedCitationStyle: PhotoHelpResultDetectedCitationStyle;
+  /** Explicit items the student must submit, present, bring, upload, or hand in */
+  deliverables: string[];
+  /** Explicit submission method or Turn-in method not provided */
+  turnInMethod: string;
 }
 
 export type ProjectPlanInputSelectedIdea = {
