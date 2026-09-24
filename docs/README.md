@@ -4,13 +4,13 @@ This folder contains the Product Management artifacts for the StudySteps V1 port
 
 ## Recommended review order
 
-1. [Product Case Study](PRODUCT_CASE_STUDY.md) — product evolution, discoveries, iterations, and PM decisions
-2. [Testing](TESTING.md) — manual acceptance history and final V1 readiness evidence
-3. [Decision Log](DECISION_LOG.md) — major product tradeoffs and rationale
-4. [AI Guardrails](AI_GUARDRAILS.md) — learning, answer-reveal, citation, and student-agency rules
-5. [Success Metrics](SUCCESS_METRICS.md) — verified quality conditions vs. proposed future metrics
-6. [Roadmap](ROADMAP.md) — what comes after the frozen V1 baseline
-7. [Demo Guide](DEMO_GUIDE.md) — short scenarios for demonstrating the product
+1. [Product Case Study](PRODUCT_CASE_STUDY.md): product evolution, discoveries, iterations, and PM decisions
+2. [Testing](TESTING.md): manual acceptance history and final V1 readiness evidence
+3. [Decision Log](DECISION_LOG.md): major product tradeoffs and rationale
+4. [AI Guardrails](AI_GUARDRAILS.md): learning, answer-reveal, citation, and student-agency rules
+5. [Success Metrics](SUCCESS_METRICS.md): verified quality conditions vs. proposed future metrics
+6. [Roadmap](ROADMAP.md): what comes after the frozen V1 baseline
+7. [Demo Guide](DEMO_GUIDE.md): short scenarios for demonstrating the product
 
 The full V1 requirements live in the root-level [PRD](../PRD.md).
 

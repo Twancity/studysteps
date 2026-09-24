@@ -6,7 +6,7 @@ V1 was assessed through **manual acceptance tests** and **technical build checks
 
 ## Manual acceptance-test history
 
-### Break Down My Assignment — manual
+### Break Down My Assignment: manual
 
 **Purpose:** verify that pasted assignment language becomes an editable plan rather than an automatically saved result.
 
@@ -14,7 +14,7 @@ V1 was assessed through **manual acceptance tests** and **technical build checks
 
 **Final status:** Pass.
 
-### Dashboard and details persistence — manual
+### Dashboard and details persistence: manual
 
 **Purpose:** verify that approved assignments survive navigation and reload.
 
@@ -22,7 +22,7 @@ V1 was assessed through **manual acceptance tests** and **technical build checks
 
 **Final status:** Pass within the same browser profile.
 
-### Help Me Understand — manual, initial partial fail then pass
+### Help Me Understand: manual, initial partial fail then pass
 
 **Initial result:** The AI returned technically structured output, but the lesson was educationally weak. Grade adaptation, worked-example separation, practice guidance, and answer boundaries needed refinement.
 
@@ -30,7 +30,7 @@ V1 was assessed through **manual acceptance tests** and **technical build checks
 
 **Final status:** Pass in live concept-help checks, including ordinary spelling errors.
 
-### Voice-input assignment — manual
+### Voice-input assignment: manual
 
 **Initial focus:** determine whether speech could populate an assignment without trapping the student in a voice-only flow.
 
@@ -38,7 +38,7 @@ V1 was assessed through **manual acceptance tests** and **technical build checks
 
 **Final status:** Implementation pass. Physical microphone behavior remains browser/device dependent.
 
-### Photo understanding — manual, initial fail then pass
+### Photo understanding: manual, initial fail then pass
 
 **Initial issue:** The app previewed an uploaded photo but did not send it to AI for understanding.
 
@@ -48,7 +48,7 @@ V1 was assessed through **manual acceptance tests** and **technical build checks
 
 **Final status:** Pass in manual/live API checks for supported images and photo-help generation. OCR quality still depends on image clarity. Dedicated automated regression coverage for renamed/unsupported phone-image formats remains an open test gap.
 
-### Worksheet teaching — manual
+### Worksheet teaching: manual
 
 **Purpose:** verify Teach Before Answer rather than answer dumping.
 
@@ -58,7 +58,7 @@ V1 was assessed through **manual acceptance tests** and **technical build checks
 
 **Final status:** Pass in manual/live checks. The initial `54 + ____ = 54` lesson withheld the target answer; Show Answer later returned the reasoning and answer. Dedicated automated regression coverage for photo-help answer leakage remains an open test gap.
 
-### Final V1 readiness audit — manual and technical
+### Final V1 readiness audit: manual and technical
 
 The final audit reviewed:
 
