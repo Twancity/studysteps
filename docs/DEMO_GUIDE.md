@@ -2,7 +2,7 @@
 
 Use these scenarios to demonstrate the product in a short portfolio review or interview.
 
-## Demo 1 — Learn a concept
+## Demo 1: Learn a concept
 
 **Student request:**  
 “I want to understand multiplication for a 3rd grader.”
@@ -24,7 +24,7 @@ The product optimizes for **learning progression**, not answer speed.
 
 ---
 
-## Demo 2 — Photograph a worksheet
+## Demo 2: Photograph a worksheet
 
 Use a clear worksheet image, such as a missing-addend addition problem.
 
@@ -45,7 +45,7 @@ This flow came directly from testing that exposed an early failure: uploaded pho
 
 ---
 
-## Demo 3 — Start a project
+## Demo 3: Start a project
 
 **Example:** Water Cycle model or Civil Rights Movement digital exhibit.
 
@@ -68,7 +68,7 @@ The product does not jump directly from assignment text to a generic checklist. 
 
 ---
 
-## Demo 4 — Done & Due
+## Demo 4: Done & Due
 
 Use an assignment with several deliverables.
 

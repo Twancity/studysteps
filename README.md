@@ -30,17 +30,17 @@ See the full [documentation index](docs/README.md).
 
 ## Visual product walkthrough
 
-### 1. Dashboard — clear next action
+### 1. Dashboard: clear next action
 Students see active work, progress, due timing, and the next unfinished step.
 
 ![StudySteps dashboard](screenshots/01-dashboard.png)
 
-### 2. Done & Due — completion is not the same as submission
+### 2. Done & Due: completion is not the same as submission
 Assignments are grouped by urgency so students can see what is overdue, due today, due tomorrow, and coming later.
 
 ![Done and Due](screenshots/03-done-and-due.png)
 
-### 3. Multimodal input — type, photo, or voice
+### 3. Multimodal input: type, photo, or voice
 Students can paste instructions, take or upload a photo, drag-and-drop supported images, or use **Tell StudySteps**.
 
 ![Photo input](screenshots/04-photo-input.png)
@@ -128,12 +128,12 @@ Project Launchpad gives the student multiple directions, credible-resource suppo
 
 ## Product principles
 
-1. **Teach Before Answer** — method and reasoning come first.
-2. **AI suggests; the student decides** — plans and project directions remain editable.
-3. **Student agency over automation** — no automatic submission.
-4. **Different jobs require different experiences** — concepts, worksheet problems, and projects are not treated the same.
-5. **Never fabricate research metadata** — no invented authors, dates, URLs, page numbers, DOIs, or citations.
-6. **Accessible by design** — students can type, speak, photograph work, drag/drop images, or listen to content.
+1. **Teach Before Answer**: method and reasoning come first.
+2. **AI suggests; the student decides**: plans and project directions remain editable.
+3. **Student agency over automation**: no automatic submission.
+4. **Different jobs require different experiences**: concepts, worksheet problems, and projects are not treated the same.
+5. **Never fabricate research metadata**: no invented authors, dates, URLs, page numbers, DOIs, or citations.
+6. **Accessible by design**: students can type, speak, photograph work, drag/drop images, or listen to content.
 
 ---
 
@@ -159,7 +159,7 @@ The full evolution is documented in the [Product Case Study](docs/PRODUCT_CASE_S
 
 ## Target users
 
-- Primarily students in grades 6–12
+- Primarily students in grades 6 to 12
 - Younger learners when a grade level is stated or reasonably inferred
 - Students who benefit from multiple input and reading modes
 
